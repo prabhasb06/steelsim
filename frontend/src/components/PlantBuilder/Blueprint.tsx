@@ -13,7 +13,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import type { ValidationResult } from '../../types/topology';
+import type { PlantGraph, ValidationResult } from '../../types/topology';
 import { CustomNode } from './CustomNode';
 import { Undo2, Redo2, Save, FolderOpen, Wand2, Network, LayoutTemplate, RotateCcw, Crosshair, ZoomIn, ZoomOut, Maximize2, X, CheckSquare, Layers, Settings2, AlertTriangle, Focus } from 'lucide-react';
 import { Inspector } from './Inspector';
@@ -28,11 +28,12 @@ const nodeTypes = {
 
 interface BlueprintCanvasProps {
     setValidation: (v: ValidationResult | null) => void;
+    onGraphChange: (graph: PlantGraph | null) => void;
     isFocusMode: boolean;
     setIsFocusMode: (f: boolean) => void;
 }
 
-const BlueprintCanvas = ({ setValidation, isFocusMode, setIsFocusMode }: BlueprintCanvasProps) => {
+const BlueprintCanvas = ({ setValidation, onGraphChange, isFocusMode, setIsFocusMode }: BlueprintCanvasProps) => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<any>([]);
@@ -130,10 +131,12 @@ const BlueprintCanvas = ({ setValidation, isFocusMode, setIsFocusMode }: Bluepri
   const validateGraph = async (n = nodes, e = edges) => {
       if (n.length === 0) {
           setValidation(null);
+          onGraphChange(null);
           setCurrentValidation(null);
           return;
       }
       const graph = getGraph(n, e);
+      onGraphChange(graph as unknown as PlantGraph);
       try {
           const res = await fetch('/api/plant/validate', {
               method: 'POST',
@@ -1027,10 +1030,10 @@ onNodesDelete={() => setTimeout(() => { saveHistory(nodes, edges); validateGraph
   );
 }
 
-export const Blueprint = ({ setValidation, isFocusMode, setIsFocusMode }: BlueprintCanvasProps) => {
+export const Blueprint = ({ setValidation, onGraphChange, isFocusMode, setIsFocusMode }: BlueprintCanvasProps) => {
     return (
         <ReactFlowProvider>
-            <BlueprintCanvas setValidation={setValidation} isFocusMode={isFocusMode} setIsFocusMode={setIsFocusMode} />
+            <BlueprintCanvas setValidation={setValidation} onGraphChange={onGraphChange} isFocusMode={isFocusMode} setIsFocusMode={setIsFocusMode} />
         </ReactFlowProvider>
     );
 }

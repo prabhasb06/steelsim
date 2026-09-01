@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Any, Dict, Optional
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from app.models.topology import PlantGraph
 
 class SimulationStatus(str, Enum):
@@ -28,6 +28,7 @@ class EventType(str, Enum):
     SIMULATION_ERROR = "SIMULATION_ERROR"
 
 class SimulationConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     name: str = "SteelSim Default"
     seed: int = 42
     plant: PlantGraph = Field(default_factory=PlantGraph)
