@@ -30,20 +30,24 @@ const nodeTypes = {
 interface BlueprintCanvasProps {
     isFocusMode: boolean;
     setIsFocusMode: (f: boolean) => void;
+    isActive?: boolean;
     activeSimId?: string | null;
     simState?: SimulationState | null;
     snapshot?: SimulationSnapshot | null;
     events?: SimulationEvent[];
     onGraphChange?: (graph: PlantGraph) => void;
+    onValidationChange?: (validation: ValidationResult | null) => void;
 }
 
 const BlueprintCanvas = ({ 
     isFocusMode, 
     setIsFocusMode,
+    isActive = true,
     simState,
     snapshot,
     events = [],
-    onGraphChange
+    onGraphChange,
+    onValidationChange
 }: BlueprintCanvasProps) => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -78,6 +82,7 @@ const BlueprintCanvas = ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+        if (!isActive) return;
         if (e.key === 'Escape' && isFocusMode) {
             updateFocusMode(false);
         }
@@ -87,7 +92,7 @@ const BlueprintCanvas = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFocusMode, updateFocusMode]);
+  }, [isActive, isFocusMode, updateFocusMode]);
 
 
 
@@ -149,6 +154,7 @@ const BlueprintCanvas = ({
   const validateGraph = async (n = nodes, e = edges) => {
       if (n.length === 0) {
           setCurrentValidation(null);
+          onValidationChange?.(null);
           return;
       }
       const graph = getGraph(n, e);
@@ -160,6 +166,7 @@ const BlueprintCanvas = ({
           });
           const v: ValidationResult = await res.json();
           setCurrentValidation(v);
+          onValidationChange?.(v);
           
           setNodes((nds) => nds.map((n) => {
               const issues = v.issues.filter(i => i.node_id === n.id);
@@ -560,6 +567,7 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
 
   // Keyboard Shortcuts
   const handleEditorKeyDown = useEffectEvent((e: KeyboardEvent) => {
+      if (!isActive) return;
       const target = e.target as HTMLElement;
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable) {
           return;
@@ -927,7 +935,7 @@ Apply Setup?`;
             <button onClick={handleLoad} className="p-1.5 text-gray-400 hover:text-white hover:bg-industrial-700 rounded" title="Load">
                 <FolderOpen className="w-4 h-4" />
             </button>
-            <button onClick={() => { setNodes([]); setEdges([]); setCurrentValidation(null); saveHistory([], []); }} className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded ml-1" title="Clear">
+            <button onClick={() => { setNodes([]); setEdges([]); setCurrentValidation(null); onValidationChange?.(null); saveHistory([], []); }} className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded ml-1" title="Clear">
                 <RotateCcw className="w-4 h-4" />
             </button>
         </div>

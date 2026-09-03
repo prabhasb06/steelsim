@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { LayoutDashboard, Factory, Activity, Truck, Wrench, Shield, Zap, Cpu, Play, Pause, RotateCcw } from 'lucide-react';
+import { LayoutDashboard, Factory, Activity, Truck, Wrench, Shield, Zap, Cpu, Play, Pause, RotateCcw, ArrowRight, CheckCircle2, AlertTriangle, Clock3 } from 'lucide-react';
 import { Blueprint } from './components/PlantBuilder/Blueprint';
 import { simulationApi } from './api';
 import type { SimulationCommand, SimulationEvent, SimulationSnapshot, SimulationState } from './types';
-import type { PlantGraph } from './types/topology';
+import type { PlantGraph, ValidationResult } from './types/topology';
 
 type ViewMode = 'OVERVIEW' | 'BUILDER' | 'SIMULATION' | 'OPTIMIZATION';
 
@@ -15,6 +15,7 @@ function App() {
   const [simState, setSimState] = useState<SimulationState | null>(null);
   const [backendConnected, setBackendConnected] = useState(true);
   const [currentGraph, setCurrentGraph] = useState<PlantGraph | null>(null);
+  const [topologyValidation, setTopologyValidation] = useState<ValidationResult | null>(null);
   const [snapshot, setSnapshot] = useState<SimulationSnapshot | null>(null);
   const [events, setEvents] = useState<SimulationEvent[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -82,6 +83,7 @@ function App() {
       }
 
       const validation = await simulationApi.validate(graph);
+      setTopologyValidation(validation);
       if (!validation.is_valid) {
         const blocking = validation.issues.filter(issue => issue.blocks_simulation).length;
         throw new Error(`Simulation blocked: resolve ${blocking || validation.issues.length} topology issue${blocking === 1 ? '' : 's'} first.`);
@@ -275,7 +277,7 @@ function App() {
         </div>
         )}
 
-        {/* CONTENT AREA: UNIFIED CANVAS */}
+        {/* CONTENT AREA */}
         <div className="flex-1 overflow-hidden relative bg-[#121315]">
           {errorMessage && (
             <div role="alert" className="absolute top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 max-w-xl rounded border border-red-700/70 bg-red-950/95 px-4 py-2 text-xs text-red-100 shadow-xl">
@@ -283,36 +285,299 @@ function App() {
               <button onClick={() => setErrorMessage(null)} className="text-red-300 hover:text-white font-bold" aria-label="Dismiss error">×</button>
             </div>
           )}
-          <div className="absolute inset-0 flex flex-col">
+          <div
+            className={viewMode === 'BUILDER' ? 'absolute inset-0 flex flex-col' : 'hidden'}
+            aria-hidden={viewMode !== 'BUILDER'}
+          >
             <Blueprint 
                 isFocusMode={isFocusMode} 
                 setIsFocusMode={setIsFocusMode}
+                isActive={viewMode === 'BUILDER'}
                 activeSimId={activeSimId}
                 simState={simState}
                 snapshot={snapshot}
                 events={events}
                 onGraphChange={setCurrentGraph}
+                onValidationChange={setTopologyValidation}
             />
           </div>
+          {viewMode === 'OVERVIEW' && (
+            <OverviewView
+              graph={currentGraph}
+              validation={topologyValidation}
+              snapshot={snapshot}
+              status={currentStatus}
+              backendConnected={backendConnected}
+              events={events}
+              onOpenBuilder={() => setViewMode('BUILDER')}
+              onOpenSimulation={() => setViewMode('SIMULATION')}
+            />
+          )}
+          {viewMode === 'SIMULATION' && (
+            <SimulationView
+              graph={currentGraph}
+              snapshot={snapshot}
+              events={events}
+              status={currentStatus}
+              isBusy={isBusy}
+              onRun={handleStart}
+              onOpenBuilder={() => setViewMode('BUILDER')}
+            />
+          )}
+          {viewMode === 'OPTIMIZATION' && (
+            <OptimizationView onOpenBuilder={() => setViewMode('BUILDER')} />
+          )}
         </div>
       </div>
     </div>
   );
 }
 
+function MetricCard({ label, value, detail, accent = 'text-white' }: { label: string; value: string | number; detail: string; accent?: string }) {
+  return (
+    <div className="rounded-lg border border-industrial-700 bg-industrial-800/80 p-4 shadow-lg">
+      <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-500">{label}</div>
+      <div className={`mt-2 text-2xl font-bold font-mono ${accent}`}>{value}</div>
+      <div className="mt-1 text-xs text-gray-500">{detail}</div>
+    </div>
+  );
+}
+
+function RecentEvents({ events }: { events: SimulationEvent[] }) {
+  const recent = [...events].reverse().slice(0, 6);
+  return (
+    <div className="divide-y divide-industrial-700/70">
+      {recent.length === 0 ? (
+        <div className="px-4 py-8 text-center text-sm text-gray-500">Simulation events will appear here after a run starts.</div>
+      ) : recent.map(event => (
+        <div key={event.id} className="flex gap-3 px-4 py-3 text-xs">
+          <span className={`mt-1 h-2 w-2 flex-shrink-0 rounded-full ${
+            event.severity === 'CRITICAL' ? 'bg-red-500' :
+            event.severity === 'WARNING' ? 'bg-amber-400' :
+            event.severity === 'NOTICE' ? 'bg-blue-400' : 'bg-gray-500'
+          }`} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-3">
+              <span className="truncate font-semibold text-gray-300">{event.source}</span>
+              <span className="whitespace-nowrap font-mono text-gray-600">{event.simulation_time}</span>
+            </div>
+            <p className="mt-1 text-gray-500">{event.message}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function OverviewView({
+  graph,
+  validation,
+  snapshot,
+  status,
+  backendConnected,
+  events,
+  onOpenBuilder,
+  onOpenSimulation,
+}: {
+  graph: PlantGraph | null;
+  validation: ValidationResult | null;
+  snapshot: SimulationSnapshot | null;
+  status: string;
+  backendConnected: boolean;
+  events: SimulationEvent[];
+  onOpenBuilder: () => void;
+  onOpenSimulation: () => void;
+}) {
+  const nodeCount = graph?.nodes.length ?? 0;
+  const edgeCount = graph?.edges.length ?? 0;
+  const blockingIssues = validation?.issues.filter(issue => issue.blocks_simulation).length ?? 0;
+  const topologyLabel = nodeCount === 0 ? 'Not configured' : validation === null ? 'Not validated' : validation.is_valid ? 'Ready' : `${blockingIssues} blocker${blockingIssues === 1 ? '' : 's'}`;
+
+  return (
+    <main className="h-full w-full overflow-x-hidden overflow-y-auto p-5 lg:p-7" aria-label="Plant overview">
+      <div className="mx-auto max-w-7xl">
+        <div className="flex flex-col gap-4 border-b border-industrial-700 pb-5 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-blue-400">Operations Center</div>
+            <h1 className="mt-1 text-2xl font-bold text-white">Plant Overview</h1>
+            <p className="mt-1 text-sm text-gray-500">Topology readiness and live TMT mini-mill performance in one place.</p>
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={onOpenBuilder} className="rounded border border-industrial-600 bg-industrial-800 px-4 py-2 text-xs font-bold text-gray-200 hover:bg-industrial-700">Open Plant Builder</button>
+            <button type="button" onClick={onOpenSimulation} className="flex items-center gap-2 rounded bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-500">Open Simulation <ArrowRight className="h-3.5 w-3.5" /></button>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricCard label="Equipment" value={nodeCount} detail={`${edgeCount} configured connections`} accent="text-blue-300" />
+          <MetricCard label="Plant Power" value={`${snapshot?.plant_summary.total_power_mw ?? 0} MW`} detail="Current simulated demand" accent="text-amber-400" />
+          <MetricCard label="Water Flow" value={`${snapshot?.plant_summary.total_water_m3h ?? 0} m³/h`} detail="Current simulated circulation" accent="text-cyan-400" />
+          <MetricCard label="Active Units" value={`${snapshot?.plant_summary.active_nodes ?? 0}/${snapshot?.plant_summary.total_nodes ?? nodeCount}`} detail={`Engine state: ${status}`} accent="text-emerald-400" />
+        </div>
+
+        <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
+          <section className="rounded-lg border border-industrial-700 bg-industrial-800/70">
+            <div className="border-b border-industrial-700 px-4 py-3">
+              <h2 className="text-sm font-bold text-white">Operational Readiness</h2>
+            </div>
+            <div className="space-y-1 p-3">
+              <ReadinessRow label="Simulation engine" value={backendConnected ? 'Online' : 'Offline'} ready={backendConnected} />
+              <ReadinessRow label="Plant topology" value={topologyLabel} ready={Boolean(validation?.is_valid)} neutral={nodeCount === 0 || validation === null} />
+              <ReadinessRow label="Simulation state" value={status} ready={status === 'RUNNING'} neutral={status === 'READY' || status === 'PAUSED'} />
+            </div>
+            {nodeCount === 0 && (
+              <div className="m-3 mt-0 rounded border border-blue-900/70 bg-blue-950/30 p-3 text-xs text-blue-200">
+                Start in Plant Builder and load the TMT template or assemble your own process line.
+              </div>
+            )}
+          </section>
+
+          <section className="overflow-hidden rounded-lg border border-industrial-700 bg-industrial-800/70">
+            <div className="flex items-center justify-between border-b border-industrial-700 px-4 py-3">
+              <h2 className="text-sm font-bold text-white">Recent Engine Events</h2>
+              <span className="font-mono text-[10px] uppercase tracking-wider text-gray-500">{events.length} total</span>
+            </div>
+            <RecentEvents events={events} />
+          </section>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function ReadinessRow({ label, value, ready, neutral = false }: { label: string; value: string; ready: boolean; neutral?: boolean }) {
+  return (
+    <div className="flex items-center justify-between rounded px-2 py-3 hover:bg-industrial-700/40">
+      <span className="text-xs text-gray-400">{label}</span>
+      <span className={`flex items-center gap-2 text-xs font-bold ${neutral ? 'text-gray-400' : ready ? 'text-emerald-400' : 'text-red-400'}`}>
+        {neutral ? <Clock3 className="h-4 w-4" /> : ready ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function SimulationView({ graph, snapshot, events, status, isBusy, onRun, onOpenBuilder }: {
+  graph: PlantGraph | null;
+  snapshot: SimulationSnapshot | null;
+  events: SimulationEvent[];
+  status: string;
+  isBusy: boolean;
+  onRun: () => void;
+  onOpenBuilder: () => void;
+}) {
+  const nodes = graph?.nodes ?? [];
+  const canRun = nodes.length > 0 && status !== 'RUNNING' && !isBusy;
+
+  return (
+    <main className="h-full w-full overflow-x-hidden overflow-y-auto p-5 lg:p-7" aria-label="Simulation console">
+      <div className="mx-auto max-w-7xl">
+        <div className="flex flex-col gap-4 border-b border-industrial-700 pb-5 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400">Deterministic Engine</div>
+            <h1 className="mt-1 text-2xl font-bold text-white">Simulation Console</h1>
+            <p className="mt-1 text-sm text-gray-500">Run the current plant and inspect equipment-level telemetry.</p>
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={onOpenBuilder} className="rounded border border-industrial-600 bg-industrial-800 px-4 py-2 text-xs font-bold text-gray-200 hover:bg-industrial-700">Edit Plant</button>
+            <button type="button" onClick={onRun} disabled={!canRun} className="flex items-center gap-2 rounded bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40">
+              <Play className="h-3.5 w-3.5 fill-current" /> {status === 'PAUSED' ? 'Resume Simulation' : 'Run Simulation'}
+            </button>
+          </div>
+        </div>
+
+        {nodes.length === 0 ? (
+          <section className="mt-12 rounded-lg border border-dashed border-industrial-600 bg-industrial-800/40 px-6 py-14 text-center">
+            <Factory className="mx-auto h-10 w-10 text-gray-600" />
+            <h2 className="mt-4 text-lg font-bold text-white">No plant is configured</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm text-gray-500">Create or load a valid plant in Plant Builder. Your design remains intact when you return to this console.</p>
+            <button type="button" onClick={onOpenBuilder} className="mt-5 rounded bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-500">Go to Plant Builder</button>
+          </section>
+        ) : (
+          <>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <MetricCard label="Engine State" value={status} detail={`Speed ${snapshot?.speed ?? '1x'}`} accent={status === 'RUNNING' ? 'text-emerald-400' : 'text-blue-300'} />
+              <MetricCard label="Simulation Tick" value={snapshot?.tick ?? 0} detail={`${snapshot?.elapsed_seconds ?? 0} simulated seconds`} />
+              <MetricCard label="Total Power" value={`${snapshot?.plant_summary.total_power_mw ?? 0} MW`} detail="Plant demand" accent="text-amber-400" />
+              <MetricCard label="Water Flow" value={`${snapshot?.plant_summary.total_water_m3h ?? 0} m³/h`} detail="Plant circulation" accent="text-cyan-400" />
+              <MetricCard label="Active Units" value={`${snapshot?.plant_summary.active_nodes ?? 0}/${nodes.length}`} detail="Running equipment" accent="text-emerald-400" />
+            </div>
+
+            <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.8fr)]">
+              <section className="overflow-hidden rounded-lg border border-industrial-700 bg-industrial-800/70">
+                <div className="flex items-center justify-between border-b border-industrial-700 px-4 py-3">
+                  <h2 className="text-sm font-bold text-white">Equipment Telemetry</h2>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-gray-500">{nodes.length} units</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-industrial-900/70 text-[10px] uppercase tracking-wider text-gray-500">
+                      <tr><th className="px-4 py-2.5">Equipment</th><th className="px-3 py-2.5">Status</th><th className="px-3 py-2.5">Power</th><th className="px-3 py-2.5">Temperature</th><th className="px-3 py-2.5">Throughput</th><th className="px-3 py-2.5">Water</th></tr>
+                    </thead>
+                    <tbody className="divide-y divide-industrial-700/70">
+                      {nodes.map(node => {
+                        const telemetry = snapshot?.node_telemetry[node.id];
+                        return (
+                          <tr key={node.id} className="hover:bg-industrial-700/30">
+                            <td className="px-4 py-3"><div className="font-semibold text-gray-200">{node.name}</div><div className="mt-0.5 font-mono text-[10px] text-gray-600">{node.component_class}</div></td>
+                            <td className="px-3 py-3"><span className={`rounded px-2 py-1 font-bold ${telemetry?.status === 'RUNNING' ? 'bg-emerald-950 text-emerald-400' : 'bg-industrial-700 text-gray-400'}`}>{telemetry?.status ?? 'IDLE'}</span></td>
+                            <td className="px-3 py-3 font-mono text-amber-400">{telemetry ? `${telemetry.power_mw} MW` : '—'}</td>
+                            <td className="px-3 py-3 font-mono text-gray-300">{telemetry ? `${telemetry.temperature_c} °C` : '—'}</td>
+                            <td className="px-3 py-3 font-mono text-gray-300">{telemetry ? `${telemetry.throughput_tph} t/h` : '—'}</td>
+                            <td className="px-3 py-3 font-mono text-cyan-400">{telemetry ? `${telemetry.water_m3h} m³/h` : '—'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className="overflow-hidden rounded-lg border border-industrial-700 bg-industrial-800/70">
+                <div className="flex items-center justify-between border-b border-industrial-700 px-4 py-3">
+                  <h2 className="text-sm font-bold text-white">Event Stream</h2>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-gray-500">Live</span>
+                </div>
+                <RecentEvents events={events} />
+              </section>
+            </div>
+          </>
+        )}
+      </div>
+    </main>
+  );
+}
+
+function OptimizationView({ onOpenBuilder }: { onOpenBuilder: () => void }) {
+  return (
+    <main className="flex h-full w-full items-center justify-center overflow-y-auto p-6" aria-label="Plant optimization">
+      <section className="w-full max-w-2xl rounded-xl border border-industrial-700 bg-industrial-800/80 p-8 text-center shadow-2xl">
+        <Cpu className="mx-auto h-11 w-11 text-indigo-400" />
+        <div className="mt-4 text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-400">Planned Module</div>
+        <h1 className="mt-2 text-2xl font-bold text-white">Plant Optimization</h1>
+        <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-gray-400">Optimization is reserved for the ACAMIS agent layer. It will compare operating scenarios and recommend parameter changes without pretending unfinished controls are active today.</p>
+        <div className="mt-6 grid gap-3 text-left sm:grid-cols-3">
+          {['Scenario comparison', 'Constraint-aware tuning', 'Auditable recommendations'].map(item => <div key={item} className="rounded border border-industrial-700 bg-industrial-900/60 p-3 text-xs text-gray-400">{item}</div>)}
+        </div>
+        <button type="button" onClick={onOpenBuilder} className="mt-7 rounded bg-blue-600 px-5 py-2 text-xs font-bold text-white hover:bg-blue-500">Return to Plant Builder</button>
+      </section>
+    </main>
+  );
+}
+
 function NavItem({ icon, label, active, onClick, disabled, collapsed }: { icon: React.ReactNode, label: string, active?: boolean, onClick?: () => void, disabled?: boolean, collapsed?: boolean }) {
   return (
-    <div onClick={disabled ? undefined : onClick} className={`flex items-center px-4 py-3 transition-colors ${
+    <button type="button" disabled={disabled} onClick={onClick} aria-label={label} className={`w-full flex items-center px-4 py-3 transition-colors text-left ${
       active ? 'bg-blue-600/10 border-l-2 border-blue-500 text-white cursor-pointer' : 
       disabled ? 'opacity-30 cursor-not-allowed text-gray-500' : 
       'border-l-2 border-transparent text-gray-400 hover:bg-industrial-700 hover:text-gray-200 cursor-pointer'
-    }`} title={collapsed ? label : undefined}>
+    }`} title={disabled ? `${label} is a planned module` : collapsed ? label : undefined}>
       <div className="w-5 h-5 flex items-center justify-center flex-shrink-0">
         {icon}
       </div>
       <span className={`ml-3 font-medium text-sm whitespace-nowrap ${collapsed ? 'hidden md:hidden' : 'hidden md:inline'}`}>{label}</span>
       {disabled && !collapsed && <span className="hidden md:inline ml-auto text-[9px] bg-industrial-700 px-1.5 py-0.5 rounded uppercase tracking-widest font-bold">Future</span>}
-    </div>
+    </button>
   );
 }
 
