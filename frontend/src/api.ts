@@ -19,6 +19,11 @@ export const simulationApi = {
   }),
   get: (id: string) => request<SimulationState>(`/api/simulations/${id}`),
   snapshot: (id: string) => request<SimulationSnapshot>(`/api/simulations/${id}/snapshot`),
+  snapshots: (id: string) => request<SimulationSnapshot[]>(`/api/simulations/${id}/snapshots`),
+  streamUrl: (id: string) => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}/api/simulations/${id}/stream`;
+  },
   command: (id: string, command: SimulationCommand, payload: Record<string, unknown> = {}) =>
     request<SimulationSnapshot>(`/api/simulations/${id}/command`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

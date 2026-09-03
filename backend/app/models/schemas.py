@@ -56,6 +56,7 @@ class PlantSummary(BaseModel):
     total_power_mw: float = 0.0
     total_water_m3h: float = 0.0
     active_nodes: int = 0
+    interlocked_nodes: int = 0
     total_nodes: int = 0
 
 class SimulationEvent(BaseModel):
@@ -76,6 +77,7 @@ class SimulationSnapshot(BaseModel):
     status: SimulationStatus
     speed: str
     tick: int
+    state_version: int = 0
     seed: int
     system_health: str = "NORMAL"
     node_telemetry: Dict[str, NodeTelemetry] = Field(default_factory=dict)
@@ -101,6 +103,7 @@ class SimulationState(BaseModel):
     current_time: str
     elapsed_seconds: int
     tick: int
+    state_version: int = 0
     speed: str
     status: SimulationStatus
     configuration: SimulationConfiguration

@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from app.engine.topology_validator import validate_topology, ValidationResult
 from app.engine.auto_connect import propose_auto_connections, propose_auto_setup
 from app.engine.auto_layout import apply_auto_layout
-from app.models.component_library import COMPONENT_TEMPLATES, create_equipment_node, TMT_SEQUENCE
+from app.models.component_library import COMPONENT_TEMPLATES, create_equipment_node, TMT_BASELINE_SEQUENCE
 
 router = APIRouter(prefix="/api/plant")
 
@@ -30,13 +30,12 @@ async def auto_layout(graph: PlantGraph):
 async def load_tmt_template():
     graph = PlantGraph()
     # Create nodes
-    for c_class in TMT_SEQUENCE:
+    for c_class in TMT_BASELINE_SEQUENCE:
         graph.nodes.append(create_equipment_node(c_class))
         
     # Add required baseline utilities so it isn't broken by default
-    graph.nodes.append(create_equipment_node(ComponentClass.WATER_SYSTEM))
-    graph.nodes.append(create_equipment_node(ComponentClass.TRANSFORMER))
-    graph.nodes.append(create_equipment_node(ComponentClass.ELECTRICAL_SUPPLY))
+    graph.nodes.append(create_equipment_node(ComponentClass.UTILITY_SUBSTATION))
+    graph.nodes.append(create_equipment_node(ComponentClass.WATER_COOLING_SYSTEM))
     
     # Use our new Auto Setup logic to perfectly connect it and lay it out
     proposal = propose_auto_setup(graph)

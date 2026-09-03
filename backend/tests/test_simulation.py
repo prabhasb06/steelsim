@@ -181,14 +181,15 @@ def test_tmt_telemetry_uses_catalogue_engineering_values():
     node_by_class = {node["component_class"]: node["id"] for node in plant["nodes"]}
 
     furnace = snapshot["node_telemetry"][node_by_class["REHEATING_FURNACE"]]
-    tmt_cooling = snapshot["node_telemetry"][node_by_class["TMT_COOLING"]]
-    transformer = snapshot["node_telemetry"][node_by_class["TRANSFORMER"]]
+    induction_furnace = snapshot["node_telemetry"][node_by_class["INDUCTION_FURNACE"]]
+    tmt_cooling = snapshot["node_telemetry"][node_by_class["TMT_QUENCHING_BOX"]]
+    substation = snapshot["node_telemetry"][node_by_class["UTILITY_SUBSTATION"]]
 
-    assert furnace["power_kw"] > 2500
+    assert induction_furnace["power_kw"] > 11000
     assert furnace["temperature_c"] > 1100
-    assert tmt_cooling["water_m3h"] > 170
-    assert transformer["throughput_tph"] == 0
-    assert snapshot["plant_summary"]["total_power_mw"] > 9
+    assert tmt_cooling["water_m3h"] > 140
+    assert substation["throughput_tph"] == 0
+    assert snapshot["plant_summary"]["total_power_mw"] > 17
 
 def test_event_history_is_bounded():
     sim = SteelSimEngine(SimulationConfiguration())
@@ -243,3 +244,75 @@ def test_snapshot_correctness():
     assert snap["simulation_id"] == sim_id
     assert snap["status"] == "READY"
     assert "system_health" in snap
+
+def test_investor_baseline_contains_melt_shop_and_utilities():
+    plant = client.get("/api/plant/template/tmt").json()
+    classes = {node["component_class"] for node in plant["nodes"]}
+
+    assert len(plant["nodes"]) == 10
+    assert {
+        "INDUCTION_FURNACE",
+        "LADLE_REFINING_FURNACE",
+        "CONTINUOUS_CASTING_MACHINE",
+        "ROLLING_MILL",
+        "TMT_QUENCHING_BOX",
+        "UTILITY_SUBSTATION",
+        "WATER_COOLING_SYSTEM",
+    }.issubset(classes)
+    assert client.post("/api/plant/validate", json=plant).json()["is_valid"]
+
+def test_backend_blocks_invalid_non_empty_topology():
+    furnace = client.get("/api/plant/components/INDUCTION_FURNACE").json()
+    sim_id = client.post(
+        "/api/simulations",
+        json={"plant": {"nodes": [furnace], "edges": []}},
+    ).json()["id"]
+
+    response = client.post(
+        f"/api/simulations/{sim_id}/command",
+        json={"command": "start", "payload": {}},
+    )
+
+    assert response.status_code == 409
+    assert "topology" in response.json()["detail"].lower()
+
+def test_snapshot_history_records_authoritative_changes():
+    sim_id = client.post("/api/simulations", json={"seed": 42}).json()["id"]
+    client.post(
+        f"/api/simulations/{sim_id}/command",
+        json={"command": "set_speed", "payload": {"speed": "5x"}},
+    )
+
+    history = client.get(f"/api/simulations/{sim_id}/snapshots").json()
+
+    assert len(history) == 1
+    assert history[0]["speed"] == "5x"
+    assert history[0]["state_version"] == 1
+
+def test_state_version_remains_monotonic_across_reset():
+    sim_id = client.post("/api/simulations", json={"seed": 42}).json()["id"]
+    changed = client.post(
+        f"/api/simulations/{sim_id}/command",
+        json={"command": "set_speed", "payload": {"speed": "5x"}},
+    ).json()
+    reset = client.post(
+        f"/api/simulations/{sim_id}/command",
+        json={"command": "reset", "payload": {}},
+    ).json()
+
+    assert reset["state_version"] > changed["state_version"]
+
+def test_websocket_stream_sends_initial_and_changed_snapshot():
+    sim_id = client.post("/api/simulations", json={"seed": 42}).json()["id"]
+
+    with client.websocket_connect(f"/api/simulations/{sim_id}/stream") as websocket:
+        initial = websocket.receive_json()
+        client.post(
+            f"/api/simulations/{sim_id}/command",
+            json={"command": "set_speed", "payload": {"speed": "5x"}},
+        )
+        changed = websocket.receive_json()
+
+    assert initial["state_version"] == 0
+    assert changed["state_version"] == 1
+    assert changed["speed"] == "5x"

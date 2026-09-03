@@ -105,7 +105,7 @@ const BlueprintCanvas = ({
           position: node.position,
           ports: node.data.ports as PortDef[],
           parameters: node.data.parameters,
-          metadata: {}
+          metadata: { ...(node.data.metadata || {}), engineering_id: node.data.engineeringId }
       })),
       edges: e.map((edge: Edge) => ({
           id: edge.id,
@@ -243,6 +243,10 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
 
   const generateEngineeringId = (c_class: string, currentNodes: any[]) => {
       const prefixes: Record<string, string> = {
+          'INDUCTION_FURNACE': 'IF', 'LADLE_REFINING_FURNACE': 'LRF',
+          'CONTINUOUS_CASTING_MACHINE': 'CCM', 'ROLLING_MILL': 'RM',
+          'TMT_QUENCHING_BOX': 'TQ', 'UTILITY_SUBSTATION': 'SS',
+          'WATER_COOLING_SYSTEM': 'CW',
           'RAW_MATERIAL_STORAGE': 'RS', 'BILLET_YARD': 'BY', 'CHARGING_TABLE': 'CT', 'REHEATING_FURNACE': 'RF',
           'ROUGHING_MILL': 'RM', 'INTERMEDIATE_MILL': 'IM', 'FINISHING_MILL': 'FM',
           'TMT_COOLING': 'TC', 'COOLING_BED': 'CB', 'CUTTING_UNIT': 'CU',
@@ -277,6 +281,7 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
                 engineeringId: generateEngineeringId(nodeData.component_class, nodes),
                 ports: nodeData.ports,
                 parameters: nodeData.parameters,
+                metadata: nodeData.metadata,
                 validationStatus: 'VALID',
                 locked: false
             },
@@ -330,6 +335,7 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
                 engineeringId: generateEngineeringId(nodeData.component_class, nodes),
                 ports: nodeData.ports,
                 parameters: nodeData.parameters,
+                metadata: nodeData.metadata,
                 validationStatus: 'VALID',
                 locked: false
             },
@@ -749,7 +755,8 @@ Apply Setup?`;
                       name: n.name,
                       engineeringId: `EQ-${(idx+1).toString().padStart(2, '0')}`,
                       ports: n.ports,
-                      parameters: n.parameters
+                      parameters: n.parameters,
+                      metadata: n.metadata
                   }
               };
           });
@@ -804,6 +811,7 @@ Apply Setup?`;
                       engineeringId: n.data?.engineeringId || n.name,
                       ports: n.ports || n.data?.ports,
                       parameters: n.parameters || n.data?.parameters,
+                      metadata: n.metadata || n.data?.metadata || {},
                       locked: !!n.data?.locked
                   }
               }));

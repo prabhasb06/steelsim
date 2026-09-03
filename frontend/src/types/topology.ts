@@ -2,6 +2,13 @@ export type PortType = "MATERIAL" | "ELECTRICAL" | "WATER" | "SIGNAL" | "AIR";
 export type PortDirection = "IN" | "OUT" | "BIDIRECTIONAL";
 
 export type ComponentClass = 
+    | "INDUCTION_FURNACE"
+    | "LADLE_REFINING_FURNACE"
+    | "CONTINUOUS_CASTING_MACHINE"
+    | "ROLLING_MILL"
+    | "TMT_QUENCHING_BOX"
+    | "UTILITY_SUBSTATION"
+    | "WATER_COOLING_SYSTEM"
     | "BILLET_YARD"
     | "CHARGING_TABLE"
     | "REHEATING_FURNACE"

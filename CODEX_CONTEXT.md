@@ -15,6 +15,8 @@
 1. **Unified Command Endpoint (`backend/app/api/routes.py`)**:
    - Implemented `POST /api/simulations/{sim_id}/command` accepting `{ command: "start" | "pause" | "resume" | "reset" | "set_speed", payload: { speed?: string } }`.
    - Updated `GET /api/simulations/{sim_id}` and `POST /api/simulations` to return full snapshots containing live telemetry.
+   - Added `WS /api/simulations/{sim_id}/stream` for backend-authoritative live snapshots and `GET /api/simulations/{sim_id}/snapshots` for bounded trace history.
+   - Simulation start is rejected server-side when a non-empty plant has blocking topology issues.
 2. **Schema Resilience & Pydantic Validation (`backend/app/models/schemas.py`)**:
    - Added `node_telemetry: Dict[str, Any]` and `plant_summary: Dict[str, Any]` to both `SimulationState` and `SimulationSnapshot`.
    - Added a Pydantic `model_validator` to `SimulationConfiguration` that automatically aliases `{ plant_graph: ... }` to `plant`, resolving a critical bug where simulations were running with an empty 0-node plant.
@@ -22,9 +24,10 @@
 3. **Telemetry Computation Engine (`backend/app/engine/simulator.py`)**:
    - Added `_calculate_telemetry()` executed on every clock tick and lifecycle transition.
    - Computes machine operating states (`IDLE`, `RUNNING`), real-time power (MW / kW), operating temperatures (°C), cooling water circulation (m³/h), and throughput (t/h) based on equipment specifications (`RAW_MATERIAL_STORAGE`, `INDUCTION_FURNACE`, `LADLE_REFINING_FURNACE`, `CONTINUOUS_CASTING_MACHINE`, `REHEATING_FURNACE`, `ROLLING_MILL`, `TMT_QUENCHING_BOX`, `COOLING_BED`, `UTILITY_SUBSTATION`, `WATER_COOLING_SYSTEM`).
-   - Computes plant-wide totals (`total_power_mw`, `total_water_m3h`, `active_nodes`, `total_nodes`).
+   - Computes plant-wide totals (`total_power_mw`, `total_water_m3h`, `active_nodes`, `interlocked_nodes`, `total_nodes`).
+   - Maintains a monotonic state version, bounded snapshot history, live subscribers, and utility-aware equipment interlocks.
 4. **Backend Test Suite**:
-   - All **24/24 tests pass (100%)** via `pytest` (`test_simulation.py` and `test_topology.py`).
+   - All **35/35 tests pass (100%)** via `pytest` (`test_simulation.py` and `test_topology.py`), including WebSocket delivery, history, monotonic versioning, safety gating, and the full melt-shop baseline.
 
 ### B. Frontend Clean Single-Interface Architecture
 1. **Master Simulation Deck in App Header (`frontend/src/App.tsx`)**:
@@ -50,6 +53,10 @@
    - Toggles cleanly between **Topology Issues** (design/port errors) and the live **Event Console** (timestamped simulation event journal).
 6. **Frontend Build Verification**:
    - `npm run build` compiles with **0 TypeScript and Vite errors** (production bundle generated cleanly in ~800ms).
+7. **Task 2 Control Center (`frontend/src/App.tsx`)**:
+   - Restored the strongest parts of the original standalone Task 2 UI inside the unified React application: live connection status, lifecycle/version/time/utilization KPIs, process-flow diagram, utility lane, clickable equipment inspector, authoritative state trace, and event journal.
+   - WebSocket streaming is primary; a slower HTTP snapshot poll remains as a resilient fallback.
+   - The builder stays mounted while switching views, so the current plant is never lost during navigation.
 
 ---
 
@@ -68,11 +75,13 @@
   * `POST /api/simulations`: Creates simulation instance with `{ plant: { nodes: [...], edges: [...] } }`.
   * `POST /api/simulations/{id}/command`: Accepts `{ command: "start" | "pause" | "resume" | "reset" | "set_speed", payload: {} }`.
   * `GET /api/simulations/{id}`: Returns `SimulationState` / `SimulationSnapshot` with `node_telemetry` and `plant_summary`.
+  * `WS /api/simulations/{id}/stream`: Streams authoritative snapshots after every lifecycle change and deterministic tick.
+  * `GET /api/simulations/{id}/snapshots`: Returns the bounded state-trace history.
   * `GET /api/plant/template/tmt`: Loads 10-node verified baseline TMT plant topology.
 
 ---
 
 ## 5. Next Steps for Codex / Developer Roadmap
-1. **Unify ACAMIS Agents into SteelSim**: Connect the 6 ACAMIS domain agents (`safety`, `quality`, `energy`, etc.) to consume `snapshot.node_telemetry` and `snapshot.plant_summary` from SteelSim.
+1. **Integrate ACAMIS through a boundary adapter**: Keep ACAMIS as a separate decision-support product and let its 6 domain agents consume approved SteelSim telemetry contracts without merging either codebase or enabling machinery control.
 2. **Dynamic Fault Injection**: Add interactive fault injection from the UI (e.g. tripping a cooling water pump or cutting an electrical line) to test how the plant state and agents react.
 3. **Final Unified Documentation**: Produce consolidated documentation unifying SteelSim (Plant Builder + Simulation) and ACAMIS (Decision Intelligence).

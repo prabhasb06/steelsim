@@ -6,6 +6,7 @@ import type { SimulationCommand, SimulationEvent, SimulationSnapshot, Simulation
 import type { PlantGraph, ValidationResult } from './types/topology';
 
 type ViewMode = 'OVERVIEW' | 'BUILDER' | 'SIMULATION' | 'OPTIMIZATION';
+type StreamStatus = 'IDLE' | 'CONNECTING' | 'LIVE' | 'RECONNECTING';
 
 function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('BUILDER');
@@ -14,6 +15,7 @@ function App() {
   const [activeSimId, setActiveSimId] = useState<string | null>(null);
   const [simState, setSimState] = useState<SimulationState | null>(null);
   const [backendConnected, setBackendConnected] = useState(true);
+  const [streamStatus, setStreamStatus] = useState<StreamStatus>('IDLE');
   const [currentGraph, setCurrentGraph] = useState<PlantGraph | null>(null);
   const [topologyValidation, setTopologyValidation] = useState<ValidationResult | null>(null);
   const [snapshot, setSnapshot] = useState<SimulationSnapshot | null>(null);
@@ -41,9 +43,15 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!activeSimId) return;
+    if (!activeSimId) {
+      return;
+    }
     let mounted = true;
-    const pollSnapshot = async () => {
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
+    let hasConnected = false;
+
+    const refreshSnapshot = async () => {
       try {
         const data = await simulationApi.snapshot(activeSimId);
         if (mounted) {
@@ -58,11 +66,38 @@ function App() {
         }
       }
     };
-    void pollSnapshot();
-    const interval = window.setInterval(pollSnapshot, 1000);
+
+    const connect = () => {
+      if (!mounted) return;
+      setStreamStatus(hasConnected ? 'RECONNECTING' : 'CONNECTING');
+      socket = new WebSocket(simulationApi.streamUrl(activeSimId));
+      socket.onopen = () => {
+        hasConnected = true;
+        if (mounted) setStreamStatus('LIVE');
+      };
+      socket.onmessage = event => {
+        if (!mounted) return;
+        const data = JSON.parse(event.data) as SimulationSnapshot;
+        setSnapshot(data);
+        setEvents(data.events);
+        setBackendConnected(true);
+      };
+      socket.onerror = () => socket?.close();
+      socket.onclose = () => {
+        if (!mounted) return;
+        setStreamStatus('RECONNECTING');
+        reconnectTimer = window.setTimeout(connect, 2_000);
+      };
+    };
+
+    void refreshSnapshot();
+    connect();
+    const fallbackInterval = window.setInterval(refreshSnapshot, 5_000);
     return () => {
       mounted = false;
-      window.clearInterval(interval);
+      socket?.close();
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+      window.clearInterval(fallbackInterval);
     };
   }, [activeSimId]);
 
@@ -319,6 +354,7 @@ function App() {
               snapshot={snapshot}
               events={events}
               status={currentStatus}
+              streamStatus={streamStatus}
               isBusy={isBusy}
               onRun={handleStart}
               onOpenBuilder={() => setViewMode('BUILDER')}
@@ -457,28 +493,40 @@ function ReadinessRow({ label, value, ready, neutral = false }: { label: string;
   );
 }
 
-function SimulationView({ graph, snapshot, events, status, isBusy, onRun, onOpenBuilder }: {
+function SimulationView({ graph, snapshot, events, status, streamStatus, isBusy, onRun, onOpenBuilder }: {
   graph: PlantGraph | null;
   snapshot: SimulationSnapshot | null;
   events: SimulationEvent[];
   status: string;
+  streamStatus: StreamStatus;
   isBusy: boolean;
   onRun: () => void;
   onOpenBuilder: () => void;
 }) {
   const nodes = graph?.nodes ?? [];
+  const edges = graph?.edges ?? [];
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const processNodes = orderProcessNodes(nodes, edges);
+  const utilityNodes = nodes.filter(node => isUtilityClass(node.component_class));
+  const selectedNode = nodes.find(node => node.id === selectedNodeId) ?? null;
   const canRun = nodes.length > 0 && status !== 'RUNNING' && !isBusy;
+  const utilization = nodes.length > 0 ? Math.round(((snapshot?.plant_summary.active_nodes ?? 0) / nodes.length) * 1000) / 10 : 0;
+  const streamLabel = streamStatus === 'IDLE' ? 'AWAITING RUN' : streamStatus === 'LIVE' ? 'LIVE BACKEND' : streamStatus;
 
   return (
     <main className="h-full w-full overflow-x-hidden overflow-y-auto p-5 lg:p-7" aria-label="Simulation console">
       <div className="mx-auto max-w-7xl">
         <div className="flex flex-col gap-4 border-b border-industrial-700 pb-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-400">Deterministic Engine</div>
-            <h1 className="mt-1 text-2xl font-bold text-white">Simulation Console</h1>
-            <p className="mt-1 text-sm text-gray-500">Run the current plant and inspect equipment-level telemetry.</p>
+            <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-400">SteelSim / Task 2</div>
+            <h1 className="mt-1 text-2xl font-bold text-white">Simulation Control Center</h1>
+            <p className="mt-1 text-sm text-gray-500">Backend-authoritative deterministic virtual factory · TMT 25 t/h baseline</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 rounded border border-industrial-700 bg-industrial-900 px-3 py-2 font-mono text-[10px] font-bold tracking-wider text-gray-300">
+              <span className={`h-2 w-2 rounded-full ${streamStatus === 'LIVE' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : streamStatus === 'IDLE' ? 'bg-gray-500' : 'animate-pulse bg-amber-400'}`} />
+              {streamLabel}
+            </div>
             <button type="button" onClick={onOpenBuilder} className="rounded border border-industrial-600 bg-industrial-800 px-4 py-2 text-xs font-bold text-gray-200 hover:bg-industrial-700">Edit Plant</button>
             <button type="button" onClick={onRun} disabled={!canRun} className="flex items-center gap-2 rounded bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40">
               <Play className="h-3.5 w-3.5 fill-current" /> {status === 'PAUSED' ? 'Resume Simulation' : 'Run Simulation'}
@@ -496,47 +544,62 @@ function SimulationView({ graph, snapshot, events, status, isBusy, onRun, onOpen
         ) : (
           <>
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              <MetricCard label="Engine State" value={status} detail={`Speed ${snapshot?.speed ?? '1x'}`} accent={status === 'RUNNING' ? 'text-emerald-400' : 'text-blue-300'} />
-              <MetricCard label="Simulation Tick" value={snapshot?.tick ?? 0} detail={`${snapshot?.elapsed_seconds ?? 0} simulated seconds`} />
-              <MetricCard label="Total Power" value={`${snapshot?.plant_summary.total_power_mw ?? 0} MW`} detail="Plant demand" accent="text-amber-400" />
-              <MetricCard label="Water Flow" value={`${snapshot?.plant_summary.total_water_m3h ?? 0} m³/h`} detail="Plant circulation" accent="text-cyan-400" />
-              <MetricCard label="Active Units" value={`${snapshot?.plant_summary.active_nodes ?? 0}/${nodes.length}`} detail="Running equipment" accent="text-emerald-400" />
+              <MetricCard label="Lifecycle" value={status} detail={`Version ${snapshot?.state_version ?? 0} · ${snapshot?.speed ?? '1x'}`} accent={status === 'RUNNING' ? 'text-emerald-400' : status === 'PAUSED' ? 'text-amber-400' : 'text-blue-300'} />
+              <MetricCard label="Simulation Time" value={`${snapshot?.elapsed_seconds ?? 0} s`} detail={`Clock tick ${snapshot?.tick ?? 0}`} />
+              <MetricCard label="Utilization" value={`${utilization}%`} detail={`${snapshot?.plant_summary.active_nodes ?? 0} of ${nodes.length} units active`} accent="text-emerald-400" />
+              <MetricCard label="Plant Power" value={`${snapshot?.plant_summary.total_power_mw ?? 0} MW`} detail="Total electrical demand" accent="text-amber-400" />
+              <MetricCard label="Cooling Water" value={`${snapshot?.plant_summary.total_water_m3h ?? 0} m³/h`} detail="Total circulation rate" accent="text-cyan-400" />
             </div>
 
-            <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.8fr)]">
+            <section className="mt-5 overflow-hidden rounded-lg border border-industrial-700 bg-industrial-800/60">
+              <div className="flex items-center justify-between border-b border-industrial-700 px-4 py-3">
+                <h2 className="text-sm font-bold text-white">Process Flow Diagram</h2>
+                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-cyan-400">Live Plant Topology</span>
+              </div>
+              <div className="overflow-x-auto p-4">
+                <div className="flex min-w-max items-center gap-2">
+                  {processNodes.map((node, index) => (
+                    <React.Fragment key={node.id}>
+                      {index > 0 && <ArrowRight className="h-5 w-5 flex-none text-blue-500" />}
+                      <ProcessCard node={node} snapshot={snapshot} selected={selectedNodeId === node.id} onSelect={() => setSelectedNodeId(node.id)} />
+                    </React.Fragment>
+                  ))}
+                </div>
+                {utilityNodes.length > 0 && (
+                  <div className="mt-4 flex min-w-max items-center gap-3 border-t border-dashed border-industrial-700 pt-4">
+                    <span className="mr-1 font-mono text-[10px] font-bold uppercase tracking-wider text-gray-600">Utilities</span>
+                    {utilityNodes.map(node => <ProcessCard key={node.id} node={node} snapshot={snapshot} selected={selectedNodeId === node.id} onSelect={() => setSelectedNodeId(node.id)} compact />)}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {selectedNode && (
+              <EquipmentInspector node={selectedNode} snapshot={snapshot} onClose={() => setSelectedNodeId(null)} />
+            )}
+
+            <div className="mt-5 grid gap-5 xl:grid-cols-2">
               <section className="overflow-hidden rounded-lg border border-industrial-700 bg-industrial-800/70">
                 <div className="flex items-center justify-between border-b border-industrial-700 px-4 py-3">
-                  <h2 className="text-sm font-bold text-white">Equipment Telemetry</h2>
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-gray-500">{nodes.length} units</span>
+                  <h2 className="text-sm font-bold text-white">State Trace</h2>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-gray-500">Authoritative Snapshot</span>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-industrial-900/70 text-[10px] uppercase tracking-wider text-gray-500">
-                      <tr><th className="px-4 py-2.5">Equipment</th><th className="px-3 py-2.5">Status</th><th className="px-3 py-2.5">Power</th><th className="px-3 py-2.5">Temperature</th><th className="px-3 py-2.5">Throughput</th><th className="px-3 py-2.5">Water</th></tr>
-                    </thead>
-                    <tbody className="divide-y divide-industrial-700/70">
-                      {nodes.map(node => {
-                        const telemetry = snapshot?.node_telemetry[node.id];
-                        return (
-                          <tr key={node.id} className="hover:bg-industrial-700/30">
-                            <td className="px-4 py-3"><div className="font-semibold text-gray-200">{node.name}</div><div className="mt-0.5 font-mono text-[10px] text-gray-600">{node.component_class}</div></td>
-                            <td className="px-3 py-3"><span className={`rounded px-2 py-1 font-bold ${telemetry?.status === 'RUNNING' ? 'bg-emerald-950 text-emerald-400' : 'bg-industrial-700 text-gray-400'}`}>{telemetry?.status ?? 'IDLE'}</span></td>
-                            <td className="px-3 py-3 font-mono text-amber-400">{telemetry ? `${telemetry.power_mw} MW` : '—'}</td>
-                            <td className="px-3 py-3 font-mono text-gray-300">{telemetry ? `${telemetry.temperature_c} °C` : '—'}</td>
-                            <td className="px-3 py-3 font-mono text-gray-300">{telemetry ? `${telemetry.throughput_tph} t/h` : '—'}</td>
-                            <td className="px-3 py-3 font-mono text-cyan-400">{telemetry ? `${telemetry.water_m3h} m³/h` : '—'}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <pre className="max-h-72 overflow-auto p-4 font-mono text-[11px] leading-5 text-cyan-100/75">{JSON.stringify(snapshot ? {
+                  simulation_id: snapshot.simulation_id,
+                  lifecycle: snapshot.status,
+                  speed: snapshot.speed,
+                  tick: snapshot.tick,
+                  simulated_seconds: snapshot.elapsed_seconds,
+                  state_version: snapshot.state_version,
+                  system_health: snapshot.system_health,
+                  plant: { summary: snapshot.plant_summary },
+                } : { lifecycle: 'READY', plant: { nodes: nodes.length, connections: edges.length } }, null, 2)}</pre>
               </section>
 
               <section className="overflow-hidden rounded-lg border border-industrial-700 bg-industrial-800/70">
                 <div className="flex items-center justify-between border-b border-industrial-700 px-4 py-3">
-                  <h2 className="text-sm font-bold text-white">Event Stream</h2>
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-gray-500">Live</span>
+                  <h2 className="text-sm font-bold text-white">Event Journal</h2>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-gray-500">Traceability</span>
                 </div>
                 <RecentEvents events={events} />
               </section>
@@ -546,6 +609,99 @@ function SimulationView({ graph, snapshot, events, status, isBusy, onRun, onOpen
       </div>
     </main>
   );
+}
+
+const UTILITY_CLASSES = new Set(['UTILITY_SUBSTATION', 'WATER_COOLING_SYSTEM', 'ELECTRICAL_SUPPLY', 'TRANSFORMER', 'WATER_SYSTEM', 'WATER_PUMP', 'COMPRESSOR']);
+
+function isUtilityClass(componentClass: string) {
+  return UTILITY_CLASSES.has(componentClass);
+}
+
+function orderProcessNodes(nodes: PlantGraph['nodes'], edges: PlantGraph['edges']) {
+  const processNodes = nodes.filter(node => !isUtilityClass(node.component_class));
+  const processIds = new Set(processNodes.map(node => node.id));
+  const inDegree = new Map(processNodes.map(node => [node.id, 0]));
+  const adjacency = new Map(processNodes.map(node => [node.id, [] as string[]]));
+  edges.filter(edge => edge.connection_type === 'MATERIAL' && processIds.has(edge.source_node) && processIds.has(edge.target_node)).forEach(edge => {
+    adjacency.get(edge.source_node)?.push(edge.target_node);
+    inDegree.set(edge.target_node, (inDegree.get(edge.target_node) ?? 0) + 1);
+  });
+  const queue = processNodes.filter(node => inDegree.get(node.id) === 0).sort((a, b) => a.position.x - b.position.x);
+  const ordered: PlantGraph['nodes'] = [];
+  while (queue.length > 0) {
+    const node = queue.shift()!;
+    ordered.push(node);
+    for (const targetId of adjacency.get(node.id) ?? []) {
+      const nextDegree = (inDegree.get(targetId) ?? 1) - 1;
+      inDegree.set(targetId, nextDegree);
+      if (nextDegree === 0) {
+        const target = processNodes.find(candidate => candidate.id === targetId);
+        if (target) queue.push(target);
+      }
+    }
+  }
+  const seen = new Set(ordered.map(node => node.id));
+  return [...ordered, ...processNodes.filter(node => !seen.has(node.id)).sort((a, b) => a.position.x - b.position.x)];
+}
+
+function telemetryStatusClass(status?: string) {
+  if (status === 'RUNNING') return 'border-emerald-500 text-emerald-400 bg-emerald-950/50';
+  if (status === 'INTERLOCKED') return 'border-red-500 text-red-400 bg-red-950/50';
+  if (status === 'PREHEATING') return 'border-amber-500 text-amber-400 bg-amber-950/50';
+  return 'border-industrial-600 text-gray-400 bg-industrial-900';
+}
+
+function ProcessCard({ node, snapshot, selected, onSelect, compact = false }: {
+  node: PlantGraph['nodes'][number];
+  snapshot: SimulationSnapshot | null;
+  selected: boolean;
+  onSelect: () => void;
+  compact?: boolean;
+}) {
+  const telemetry = snapshot?.node_telemetry[node.id];
+  const status = telemetry?.status ?? 'IDLE';
+  return (
+    <button type="button" onClick={onSelect} className={`${compact ? 'w-56' : 'w-60'} flex-none rounded border p-3 text-left transition-colors ${selected ? 'border-blue-400 bg-blue-950/30 shadow-[0_0_0_1px_rgba(96,165,250,0.35)]' : status === 'RUNNING' ? 'border-emerald-700 bg-industrial-900/80 hover:border-emerald-500' : status === 'INTERLOCKED' ? 'border-red-700 bg-red-950/20 hover:border-red-500' : 'border-industrial-600 bg-industrial-900/80 hover:border-blue-600'}`}>
+      <div className="font-mono text-[10px] text-blue-300">{String(node.metadata.engineering_id ?? node.id).toUpperCase()}</div>
+      <div className="mt-1 min-h-9 text-xs font-bold leading-4 text-white">{node.name}</div>
+      <span className={`mt-3 inline-flex rounded border px-2 py-0.5 font-mono text-[9px] font-bold tracking-wider ${telemetryStatusClass(status)}`}>{status}</span>
+      <div className="mt-2 flex gap-3 font-mono text-[10px] text-gray-400">
+        <span>{telemetry?.throughput_tph ?? 0} t/h</span>
+        <span>{telemetry?.power_mw ?? 0} MW</span>
+      </div>
+    </button>
+  );
+}
+
+function EquipmentInspector({ node, snapshot, onClose }: { node: PlantGraph['nodes'][number]; snapshot: SimulationSnapshot | null; onClose: () => void }) {
+  const telemetry = snapshot?.node_telemetry[node.id];
+  const status = telemetry?.status ?? 'IDLE';
+  const category = String(node.metadata.category ?? (isUtilityClass(node.component_class) ? 'UTILITY' : 'PROCESS'));
+  return (
+    <section className="mt-5 overflow-hidden rounded-lg border border-blue-900/70 bg-blue-950/10">
+      <div className="flex items-center justify-between border-b border-industrial-700 px-4 py-3">
+        <div><div className="text-[10px] font-bold uppercase tracking-wider text-blue-400">Equipment Inspector</div><h2 className="mt-0.5 text-sm font-bold text-white">{node.name}</h2></div>
+        <button type="button" onClick={onClose} aria-label="Close equipment inspector" className="text-xl text-gray-500 hover:text-white">×</button>
+      </div>
+      <div className="grid gap-px bg-industrial-700 sm:grid-cols-2 lg:grid-cols-4">
+        <InspectorField label="Engineering ID" value={String(node.metadata.engineering_id ?? node.id)} />
+        <InspectorField label="Component Class" value={node.component_class.replaceAll('_', ' ')} />
+        <InspectorField label="Category" value={category} />
+        <InspectorField label="Status" value={status} accent={status === 'RUNNING' ? 'text-emerald-400' : status === 'INTERLOCKED' ? 'text-red-400' : 'text-gray-300'} />
+        <InspectorField label="Actual Throughput" value={`${telemetry?.throughput_tph ?? 0} t/h`} />
+        <InspectorField label="Power Draw" value={`${telemetry?.power_mw ?? 0} MW`} accent="text-amber-400" />
+        <InspectorField label="Water Flow" value={`${telemetry?.water_m3h ?? 0} m³/h`} accent="text-cyan-400" />
+        <InspectorField label="Temperature" value={`${telemetry?.temperature_c ?? 25} °C`} />
+      </div>
+      <div className="flex flex-wrap gap-2 p-4">
+        {node.ports.map(port => <span key={port.id} className="rounded border border-industrial-600 bg-industrial-900 px-2 py-1 font-mono text-[9px] text-gray-400"><b className="text-gray-200">{port.direction}</b> {port.id} <span className={port.type === 'MATERIAL' ? 'text-blue-400' : port.type === 'ELECTRICAL' ? 'text-amber-400' : port.type === 'WATER' ? 'text-cyan-400' : 'text-purple-400'}>{port.type}</span></span>)}
+      </div>
+    </section>
+  );
+}
+
+function InspectorField({ label, value, accent = 'text-gray-200' }: { label: string; value: string; accent?: string }) {
+  return <div className="bg-industrial-800/90 p-3"><div className="text-[9px] font-bold uppercase tracking-wider text-gray-600">{label}</div><div className={`mt-1 font-mono text-xs ${accent}`}>{value}</div></div>;
 }
 
 function OptimizationView({ onOpenBuilder }: { onOpenBuilder: () => void }) {

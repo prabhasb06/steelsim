@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 import random
+from collections import deque
 from datetime import datetime, timedelta, timezone
 
 from app.models.schemas import (
@@ -24,12 +25,15 @@ class SteelSimEngine:
         
         self.elapsed_seconds = 0
         self.tick = 0
+        self.state_version = 0
         self.speed = "1x"
         self.status = SimulationStatus.READY
         self.events: list[SimulationEvent] = []
         
         self._task = None
         self._tick_step = 1  # 1 simulated second per tick
+        self._subscribers: set[asyncio.Queue] = set()
+        self._snapshots: deque[SimulationSnapshot] = deque(maxlen=120)
         
         self.node_telemetry: dict = {}
         self.plant_summary: dict = {
@@ -37,6 +41,7 @@ class SteelSimEngine:
             "total_power_mw": 0.0,
             "total_water_m3h": 0.0,
             "active_nodes": 0,
+            "interlocked_nodes": 0,
             "total_nodes": len(self.config.plant.nodes) if self.config.plant else 0
         }
         self._calculate_telemetry()
@@ -59,6 +64,13 @@ class SteelSimEngine:
         # always take precedence.
         defaults = {
             "RAW_MATERIAL_STORAGE": {"power_kw": 15.0, "temp": 30.0},
+            "INDUCTION_FURNACE": {"power_kw": 12500.0, "water": 120.0, "temp": 1620.0},
+            "LADLE_REFINING_FURNACE": {"power_kw": 3200.0, "water": 45.0, "temp": 1580.0},
+            "CONTINUOUS_CASTING_MACHINE": {"power_kw": 450.0, "water": 90.0, "temp": 1150.0},
+            "ROLLING_MILL": {"power_kw": 2800.0, "water": 60.0, "temp": 1050.0},
+            "TMT_QUENCHING_BOX": {"power_kw": 75.0, "water": 150.0, "temp": 580.0},
+            "UTILITY_SUBSTATION": {"power_kw": 0.0, "temp": 45.0},
+            "WATER_COOLING_SYSTEM": {"power_kw": 120.0, "temp": 32.0},
             "BILLET_YARD": {"power_kw": 35.0, "temp": 30.0},
             "CHARGING_TABLE": {"power_kw": 45.0, "temp": 35.0},
             "ROUGHING_MILL": {"water": 60.0, "temp": 1050.0},
@@ -79,8 +91,23 @@ class SteelSimEngine:
         total_power = 0.0
         total_water = 0.0
         active_count = 0
+        interlocked_count = 0
 
         nodes = self.config.plant.nodes if self.config.plant else []
+        electrical_consumers = {
+            edge.target_node for edge in self.config.plant.edges
+            if edge.connection_type.value == "ELECTRICAL"
+        } if self.config.plant else set()
+        water_consumers = {
+            edge.target_node for edge in self.config.plant.edges
+            if edge.connection_type.value == "WATER"
+        } if self.config.plant else set()
+        material_sources: dict[str, list[str]] = {}
+        if self.config.plant:
+            for edge in self.config.plant.edges:
+                if edge.connection_type.value == "MATERIAL":
+                    material_sources.setdefault(edge.target_node, []).append(edge.source_node)
+
         for n in nodes:
             c_class = n.component_class.value
             spec = defaults.get(c_class, {})
@@ -104,11 +131,26 @@ class SteelSimEngine:
             temperature_qty = params.get("temperature")
             rated_temperature = temperature_qty.value if temperature_qty else spec.get("temp", 25.0)
 
-            pwr = round(rated_power_kw * load_factor, 1) if is_running else 0.0
-            wat = round(rated_water * (0.95 + (phase % 4) * 0.02), 1) if is_running else 0.0
-            tph = round(rated_throughput * load_factor, 1) if is_running else 0.0
-            temp = round(rated_temperature + (phase % 5) - 2.0, 1) if is_running else 25.0
-            status_str = "RUNNING" if is_running else "IDLE"
+            needs_power = any(
+                port.type.value == "ELECTRICAL" and port.direction.value == "IN"
+                for port in n.ports
+            )
+            needs_water = any(
+                port.type.value == "WATER" and port.direction.value == "IN"
+                for port in n.ports
+            )
+            utilities_ready = (
+                (not needs_power or n.id in electrical_consumers)
+                and (not needs_water or n.id in water_consumers)
+            )
+            status_str = "IDLE"
+            if is_running:
+                status_str = "RUNNING" if utilities_ready else "INTERLOCKED"
+
+            operating = status_str == "RUNNING"
+            pwr = round(rated_power_kw * load_factor, 1) if operating else 0.0
+            wat = round(rated_water * (0.95 + (phase % 4) * 0.02), 1) if operating else 0.0
+            temp = round(rated_temperature + (phase % 5) - 2.0, 1) if operating else 25.0
 
             telemetry[n.id] = {
                 "id": n.id,
@@ -117,13 +159,38 @@ class SteelSimEngine:
                 "power_mw": round(pwr / 1000.0, 2),
                 "water_m3h": wat,
                 "temperature_c": temp,
-                "throughput_tph": tph,
+                "throughput_tph": 0.0,
+                "rated_throughput_tph": rated_throughput,
             }
 
             total_power += pwr
             total_water += wat
-            if is_running:
+            if operating:
                 active_count += 1
+            elif status_str == "INTERLOCKED":
+                interlocked_count += 1
+
+        for n in nodes:
+            node_telemetry = telemetry[n.id]
+            if node_telemetry["status"] != "RUNNING":
+                continue
+            has_material_input = any(
+                port.type.value == "MATERIAL" and port.direction.value == "IN"
+                for port in n.ports
+            )
+            upstream_ready = not has_material_input or any(
+                telemetry.get(source_id, {}).get("status") == "RUNNING"
+                for source_id in material_sources.get(n.id, [])
+            )
+            if upstream_ready:
+                node_telemetry["throughput_tph"] = round(
+                    node_telemetry.pop("rated_throughput_tph") * load_factor, 1
+                )
+            else:
+                node_telemetry.pop("rated_throughput_tph")
+
+        for node_telemetry in telemetry.values():
+            node_telemetry.pop("rated_throughput_tph", None)
 
         self.node_telemetry = telemetry
         self.plant_summary = {
@@ -131,6 +198,7 @@ class SteelSimEngine:
             "total_power_mw": round(total_power / 1000.0, 2),
             "total_water_m3h": round(total_water, 1),
             "active_nodes": active_count,
+            "interlocked_nodes": interlocked_count,
             "total_nodes": len(nodes),
         }
 
@@ -149,6 +217,32 @@ class SteelSimEngine:
             del self.events[:-self.MAX_EVENTS]
         return event
 
+    def _publish_snapshot(self) -> None:
+        snapshot = self.get_snapshot()
+        self._snapshots.append(snapshot)
+        for queue in tuple(self._subscribers):
+            if queue.full():
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+            queue.put_nowait(snapshot)
+
+    def _state_changed(self) -> None:
+        self.state_version += 1
+        self._publish_snapshot()
+
+    def subscribe(self) -> asyncio.Queue:
+        queue: asyncio.Queue = asyncio.Queue(maxsize=2)
+        self._subscribers.add(queue)
+        return queue
+
+    def unsubscribe(self, queue: asyncio.Queue) -> None:
+        self._subscribers.discard(queue)
+
+    def get_snapshots(self) -> list[SimulationSnapshot]:
+        return list(self._snapshots)
+
     def get_state(self) -> SimulationState:
         return SimulationState(
             id=self.id,
@@ -159,6 +253,7 @@ class SteelSimEngine:
             current_time=self.current_time.isoformat(),
             elapsed_seconds=self.elapsed_seconds,
             tick=self.tick,
+            state_version=self.state_version,
             speed=self.speed,
             status=self.status,
             configuration=self.config,
@@ -176,6 +271,7 @@ class SteelSimEngine:
             status=self.status,
             speed=self.speed,
             tick=self.tick,
+            state_version=self.state_version,
             seed=self.seed,
             system_health="NORMAL",
             node_telemetry=self.node_telemetry,
@@ -191,6 +287,7 @@ class SteelSimEngine:
         self.status = SimulationStatus.RUNNING
         self._calculate_telemetry()
         self._add_event(event_type, EventSeverity.INFO, "SimulationControl", "Simulation started")
+        self._state_changed()
         
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._run_loop())
@@ -202,6 +299,7 @@ class SteelSimEngine:
         self.status = SimulationStatus.PAUSED
         self._calculate_telemetry()
         self._add_event(EventType.SIMULATION_PAUSED, EventSeverity.INFO, "SimulationControl", "Simulation paused")
+        self._state_changed()
         
         if self._task and not self._task.done():
             self._task.cancel()
@@ -221,7 +319,9 @@ class SteelSimEngine:
         self._calculate_telemetry()
         
         self.events.clear()
+        self._snapshots.clear()
         self._add_event(EventType.SIMULATION_RESET, EventSeverity.INFO, "SimulationControl", "Simulation reset to initial state")
+        self._state_changed()
 
     def set_speed(self, speed: str):
         valid_speeds = ["1x", "5x", "10x", "60x", "MAX"]
@@ -230,6 +330,7 @@ class SteelSimEngine:
         
         self.speed = speed
         self._add_event(EventType.SIMULATION_SPEED_CHANGED, EventSeverity.INFO, "SimulationControl", f"Speed changed to {speed}")
+        self._state_changed()
 
     async def _run_loop(self):
         speed_map = {
@@ -253,6 +354,7 @@ class SteelSimEngine:
                 self.elapsed_seconds += self._tick_step
                 self.current_time += timedelta(seconds=self._tick_step)
                 self._calculate_telemetry()
+                self._state_changed()
                 
                 # Sleep to match real-time
                 if sleep_time > 0:

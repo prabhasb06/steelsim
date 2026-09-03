@@ -17,7 +17,7 @@ export interface SimulationEvent {
 
 export interface NodeTelemetry {
     id: string;
-    status: "IDLE" | "RUNNING";
+    status: "OFF" | "IDLE" | "PREHEATING" | "RUNNING" | "INTERLOCKED";
     power_kw: number;
     power_mw: number;
     water_m3h: number;
@@ -30,6 +30,7 @@ export interface PlantSummary {
     total_power_mw: number;
     total_water_m3h: number;
     active_nodes: number;
+    interlocked_nodes: number;
     total_nodes: number;
 }
 
@@ -48,6 +49,7 @@ export interface SimulationState {
     current_time: string;
     elapsed_seconds: number;
     tick: number;
+    state_version: number;
     speed: string;
     status: SimulationStatus;
     configuration: SimulationConfiguration;
@@ -64,6 +66,7 @@ export interface SimulationSnapshot {
     status: SimulationStatus;
     speed: string;
     tick: number;
+    state_version: number;
     seed: number;
     system_health: string;
     node_telemetry: Record<string, NodeTelemetry>;

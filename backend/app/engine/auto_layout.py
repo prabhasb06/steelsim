@@ -10,7 +10,8 @@ def apply_auto_layout(graph: PlantGraph) -> PlantGraph:
     UTILITY_CLASSES = {
         ComponentClass.WATER_SYSTEM, ComponentClass.WATER_PUMP,
         ComponentClass.TRANSFORMER, ComponentClass.ELECTRICAL_SUPPLY,
-        ComponentClass.COMPRESSOR
+        ComponentClass.COMPRESSOR, ComponentClass.UTILITY_SUBSTATION,
+        ComponentClass.WATER_COOLING_SYSTEM,
     }
     SUPPORT_CLASSES = {
         ComponentClass.MAINTENANCE_STATION, ComponentClass.QUALITY_INSPECTION
@@ -71,6 +72,8 @@ def apply_auto_layout(graph: PlantGraph) -> PlantGraph:
     supp_nodes = [n for n in graph.nodes if n.component_class in SUPPORT_CLASSES]
 
     utility_order = {
+        ComponentClass.UTILITY_SUBSTATION: 0,
+        ComponentClass.WATER_COOLING_SYSTEM: 1,
         ComponentClass.ELECTRICAL_SUPPLY: 0,
         ComponentClass.TRANSFORMER: 1,
         ComponentClass.WATER_SYSTEM: 2,

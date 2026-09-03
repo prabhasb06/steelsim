@@ -1,4 +1,6 @@
-from fastapi import APIRouter, HTTPException
+import asyncio
+
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from typing import List
 
 from pydantic import BaseModel, Field
@@ -7,6 +9,7 @@ from app.models.schemas import (
     SimulationEvent, ChangeSpeedRequest
 )
 from app.manager.simulation_manager import SimulationManager
+from app.engine.topology_validator import validate_topology
 
 router = APIRouter(prefix="/api")
 
@@ -44,6 +47,10 @@ async def execute_command(sim_id: str, req: CommandRequest):
     cmd = req.command.lower()
     try:
         if cmd in ("start", "run", "resume"):
+            validation = validate_topology(sim.config.plant)
+            if sim.config.plant.nodes and not validation.is_valid:
+                blocking = sum(1 for issue in validation.issues if issue.blocks_simulation)
+                raise ValueError(f"Simulation blocked by {blocking} topology issue{'s' if blocking != 1 else ''}")
             sim.start()
         elif cmd == "pause":
             sim.pause()
@@ -66,6 +73,10 @@ async def start_simulation(sim_id: str):
     if not sim:
         raise HTTPException(status_code=404, detail="Simulation not found")
     try:
+        validation = validate_topology(sim.config.plant)
+        if sim.config.plant.nodes and not validation.is_valid:
+            blocking = sum(1 for issue in validation.issues if issue.blocks_simulation)
+            raise ValueError(f"Simulation blocked by {blocking} topology issue{'s' if blocking != 1 else ''}")
         sim.start()
         return sim.get_state()
     except ValueError as e:
@@ -133,3 +144,32 @@ async def get_snapshot(sim_id: str):
     if not sim:
         raise HTTPException(status_code=404, detail="Simulation not found")
     return sim.get_snapshot()
+
+@router.get("/simulations/{sim_id}/snapshots", response_model=List[SimulationSnapshot])
+async def get_snapshots(sim_id: str):
+    sim = manager.get_simulation(sim_id)
+    if not sim:
+        raise HTTPException(status_code=404, detail="Simulation not found")
+    return sim.get_snapshots()
+
+@router.websocket("/simulations/{sim_id}/stream")
+async def stream_simulation(websocket: WebSocket, sim_id: str):
+    await websocket.accept()
+    sim = manager.get_simulation(sim_id)
+    if not sim:
+        await websocket.close(code=4404, reason="Simulation not found")
+        return
+
+    queue = sim.subscribe()
+    await websocket.send_json(sim.get_snapshot().model_dump(mode="json"))
+    try:
+        while True:
+            try:
+                snapshot = await asyncio.wait_for(queue.get(), timeout=15.0)
+            except asyncio.TimeoutError:
+                snapshot = sim.get_snapshot()
+            await websocket.send_json(snapshot.model_dump(mode="json"))
+    except WebSocketDisconnect:
+        pass
+    finally:
+        sim.unsubscribe(queue)

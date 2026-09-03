@@ -112,8 +112,9 @@ def validate_topology(graph: PlantGraph) -> ValidationResult:
             if is_cyclic(node.id):
                 issues.append(ValidationIssue(level="ERROR", issue_code="CIRCULAR_FLOW", node_id=node.id, message="Circular material flow detected.", engineering_reason="Process flows must be acyclic.", blocks_simulation=True))
 
+    terminal_classes = {ComponentClass.FINISHED_GOODS, ComponentClass.COOLING_BED}
     for node in graph.nodes:
-        if node.component_class != ComponentClass.FINISHED_GOODS:
+        if node.component_class not in terminal_classes:
             # Only complain if the node ACTUALLY has a material_out port
             has_mat_out = any(p.type == PortType.MATERIAL and p.direction == "OUT" for p in node.ports)
             out_edges = material_adj[node.id]
@@ -123,7 +124,7 @@ def validate_topology(graph: PlantGraph) -> ValidationResult:
                     engineering_reason="Material path ends prematurely.",
                     suggested_resolution="Connect a downstream process stage.",
                     blocks_simulation=True))
-        else:
+        elif node.component_class == ComponentClass.FINISHED_GOODS:
             if material_adj[node.id]:
                 issues.append(ValidationIssue(level="ERROR", issue_code="INVALID_ROUTING", node_id=node.id, message="Finished Goods should not have downstream connections.", blocks_simulation=True))
 
