@@ -12,6 +12,7 @@ function App() {
   const [activeSimId, setActiveSimId] = useState<string | null>(null);
   const [simState, setSimState] = useState<any>(null);
   const [backendConnected, setBackendConnected] = useState(true);
+  const [currentGraph, setCurrentGraph] = useState<any>(null);
   
   const [snapshot, setSnapshot] = useState<any>(null);
   const [events, setEvents] = useState<any[]>([]);
@@ -46,29 +47,42 @@ function App() {
       eventsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [events]);
 
-  const handleCreate = async () => {
-    if (!topologyValidation?.is_valid) {
-      alert("Cannot start simulation. Plant topology has fatal errors.");
-      return;
+  const handleStart = async () => {
+    if (topologyValidation && !topologyValidation.is_valid) {
+      console.warn("Starting simulation with active topology validation issues.");
     }
-    const graphStr = localStorage.getItem('steelsim_plant');
-    if (!graphStr) return;
-    
-    try {
-      const graph = JSON.parse(graphStr);
-      const res = await fetch('/api/simulations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plant_graph: graph })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setActiveSimId(data.id);
-        setSimState(data);
-        setViewMode('SIMULATION');
+    if (!activeSimId) {
+      let graph = currentGraph;
+      if (!graph || !graph.nodes || graph.nodes.length === 0) {
+        try {
+          const graphStr = localStorage.getItem('steelsim_plant');
+          if (graphStr) graph = JSON.parse(graphStr);
+        } catch(e){}
       }
-    } catch(e) {
-      console.error(e);
+
+      try {
+        const res = await fetch('/api/simulations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plant: graph || {} })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setActiveSimId(data.id);
+          setSimState(data);
+          // Start simulation
+          await fetch(`/api/simulations/${data.id}/command`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command: 'start', payload: {} })
+          });
+        }
+      } catch(e) {
+        console.error(e);
+      }
+    } else {
+      const current = snapshot?.status || simState?.status;
+      handleCommand(current === 'PAUSED' ? 'resume' : 'start');
     }
   };
 
@@ -82,6 +96,7 @@ function App() {
     if (res.ok) {
         const state = await res.json();
         setSimState(state);
+        if (command === 'reset') setSnapshot(null);
     }
   };
 
@@ -95,7 +110,6 @@ function App() {
     if (res.ok) {
         const state = await res.json();
         setSimState(state);
-        setSnapshot(null);
     }
   };
 
@@ -134,178 +148,125 @@ function App() {
       {/* MAIN WORKSPACE */}
       <div className="flex-1 flex flex-col min-w-0">
         
-        {/* TOP BAR */}
+        {/* TOP BAR: MASTER SIMULATION CONTROLS & KPI DECK */}
         {!isFocusMode && (
-        <div className="h-14 border-b border-industrial-700 bg-industrial-800 flex items-center justify-between px-6 z-0 flex-shrink-0">
-          <div className="flex items-center space-x-4">
-            <h1 className="text-lg font-semibold text-white">
-              {viewMode === 'BUILDER' ? 'Interactive Plant Builder' : 
-               viewMode === 'SIMULATION' ? 'Simulation Console' : viewMode === 'OPTIMIZATION' ? 'AI Optimization & Setup' : 'Overview'}
-            </h1>
-          </div>
-          <div className="flex items-center space-x-4 text-sm">
-            {viewMode === 'BUILDER' && (
-                <button onClick={handleCreate}  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm font-semibold transition-colors disabled:opacity-30 disabled:hover:bg-blue-600 shadow-[0_0_12px_rgba(37,99,235,0.2)]">
-                  Simulate Plant Topology
-                </button>
-            )}
-            {viewMode === 'SIMULATION' && !activeSimId && (
-              <button onClick={() => setViewMode('BUILDER')} className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm font-semibold transition-colors">
-                Back to Builder
-              </button>
-            )}
-            <div className="flex items-center space-x-2">
-               <span className={`w-2 h-2 rounded-full ${backendConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 animate-pulse'}`}></span>
-               <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                 {backendConnected ? 'API Connected' : 'Connection Lost'}
-               </span>
+        <div className="h-14 border-b border-industrial-700 bg-industrial-800 flex items-center justify-between px-4 z-10 flex-shrink-0">
+          {/* Left: Brand & Plant Title */}
+          <div className="flex items-center space-x-3">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-white tracking-wider text-base">SteelSim</span>
+              <span className="text-xs bg-industrial-700 text-gray-300 px-2 py-0.5 rounded font-mono">TMT Mini-Mill</span>
             </div>
+            
+            {/* Status Badge */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-industrial-900 border border-industrial-700 text-xs font-mono">
+              <span className={`w-2 h-2 rounded-full ${
+                currentStatus === 'RUNNING' ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]' :
+                currentStatus === 'PAUSED' ? 'bg-amber-400' : 'bg-blue-400'
+              }`}></span>
+              <span className="font-bold tracking-wider text-white">{currentStatus}</span>
+            </div>
+          </div>
+
+          {/* Center: Master Simulation Controls */}
+          <div className="flex items-center gap-3">
+            {/* Run / Pause / Reset Buttons */}
+            <div className="flex items-center gap-1.5 bg-industrial-900/80 p-1 rounded-md border border-industrial-700">
+              <button 
+                onClick={handleStart}
+                disabled={currentStatus === 'RUNNING'}
+                className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600/20 text-emerald-400 border border-emerald-600/50 rounded hover:bg-emerald-600 hover:text-white disabled:opacity-30 disabled:hover:bg-emerald-600/20 disabled:hover:text-emerald-400 transition-colors text-xs font-bold"
+                title="Run Simulation"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>Run</span>
+              </button>
+              <button 
+                onClick={() => handleCommand('pause')}
+                disabled={currentStatus !== 'RUNNING'}
+                className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/20 text-amber-400 border border-amber-500/50 rounded hover:bg-amber-500 hover:text-white disabled:opacity-30 disabled:hover:bg-amber-500/20 disabled:hover:text-amber-400 transition-colors text-xs font-bold"
+                title="Pause Simulation"
+              >
+                <Pause className="w-3.5 h-3.5 fill-current" />
+                <span>Pause</span>
+              </button>
+              <button 
+                onClick={() => handleCommand('reset')}
+                className="flex items-center gap-1.5 px-2.5 py-1 bg-red-500/10 text-red-400 border border-red-500/30 rounded hover:bg-red-500 hover:text-white transition-colors text-xs font-bold"
+                title="Reset Simulation"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset</span>
+              </button>
+            </div>
+
+            {/* Speed Multiplier */}
+            <div className="flex bg-industrial-900 rounded border border-industrial-700 p-0.5 text-xs font-mono">
+              {['1x', '5x', '10x', '60x'].map(spd => (
+                <button
+                  key={spd}
+                  onClick={() => handleSpeed(spd)}
+                  className={`px-2 py-0.5 rounded transition-colors ${currentSpeed === spd ? 'bg-blue-600 text-white font-bold' : 'text-gray-400 hover:text-white'}`}
+                >
+                  {spd}
+                </button>
+              ))}
+            </div>
+
+            {/* Real-time Telemetry Readout */}
+            <div className="flex items-center gap-4 bg-industrial-900/60 px-3 py-1 rounded border border-industrial-700/80 text-xs font-mono">
+              <div>
+                <span className="text-gray-500 text-[10px] uppercase mr-1.5">Tick</span>
+                <span className="text-gray-200 font-bold">{snapshot?.tick ?? simState?.tick ?? 0}</span>
+              </div>
+              <div className="w-px h-4 bg-industrial-700"></div>
+              <div>
+                <span className="text-gray-500 text-[10px] uppercase mr-1.5">Power</span>
+                <span className="text-amber-400 font-bold">
+                  {snapshot?.plant_summary?.total_power_mw ? `${snapshot.plant_summary.total_power_mw} MW` : '0.0 MW'}
+                </span>
+              </div>
+              <div className="w-px h-4 bg-industrial-700"></div>
+              <div>
+                <span className="text-gray-500 text-[10px] uppercase mr-1.5">Water</span>
+                <span className="text-cyan-400 font-bold">
+                  {snapshot?.plant_summary?.total_water_m3h ? `${snapshot.plant_summary.total_water_m3h} m³/h` : '0.0 m³/h'}
+                </span>
+              </div>
+              <div className="w-px h-4 bg-industrial-700"></div>
+              <div>
+                <span className="text-gray-500 text-[10px] uppercase mr-1.5">Active</span>
+                <span className="text-emerald-400 font-bold">
+                  {snapshot?.plant_summary?.active_nodes ?? 0}/{snapshot?.plant_summary?.total_nodes ?? 0}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Right: API Health Status */}
+          <div className="flex items-center space-x-2">
+             <span className={`w-2 h-2 rounded-full ${backendConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 animate-pulse'}`}></span>
+             <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+               {backendConnected ? 'Engine Online' : 'Engine Offline'}
+             </span>
           </div>
         </div>
         )}
 
-        {/* CONTENT AREA */}
+        {/* CONTENT AREA: UNIFIED CANVAS */}
         <div className="flex-1 overflow-hidden relative bg-[#121315]">
-          
-          {/* BUILDER VIEW */}
-          {viewMode === 'BUILDER' && (
-            <div className="absolute inset-0 flex flex-col">
-              <Blueprint 
-                  setValidation={setTopologyValidation} 
-                  isFocusMode={isFocusMode} 
-                  setIsFocusMode={setIsFocusMode} 
-              />
-            </div>
-          )}
-
-          {/* SIMULATION VIEW */}
-          {viewMode === 'SIMULATION' && (
-            <div className="absolute inset-0 flex flex-col p-6 space-y-6 overflow-y-auto">
-              
-              {/* TOP PANELS */}
-              <div className="flex gap-6 h-28">
-                
-                {/* HUD */}
-                <div className="flex-1 bg-industrial-800 border border-industrial-700 rounded-md flex items-center px-8 justify-between shadow-lg">
-                  <div className="flex items-center gap-12">
-                    <div>
-                      <div className="text-xs text-gray-500 uppercase tracking-widest mb-1">Plant Status</div>
-                      <div className="flex items-center gap-2">
-                        <span className={`w-3 h-3 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.5)] ${
-                          currentStatus === 'READY' ? 'bg-blue-500' : 
-                          currentStatus === 'RUNNING' ? 'bg-green-500' : 
-                          currentStatus === 'PAUSED' ? 'bg-amber-500' : 'bg-red-500'
-                        }`}></span>
-                        <span className="font-bold tracking-wider text-white">{currentStatus}</span>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <div className="text-xs text-gray-500 uppercase tracking-widest mb-1">Sim Time</div>
-                      <div className="font-mono text-lg text-blue-400">
-                        {(snapshot?.simulation_time || simState?.current_time) ? (snapshot?.simulation_time || simState?.current_time)?.replace('T', ' ').substring(0, 19) : '0000-00-00 00:00:00'}
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <div className="text-xs text-gray-500 uppercase tracking-widest mb-1">Tick</div>
-                      <div className="font-mono text-lg text-gray-300">
-                        {snapshot?.tick ?? simState?.tick ?? 0}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* CONTROLS */}
-                  <div className="flex items-center gap-4">
-                    <div className="flex bg-industrial-900 rounded border border-industrial-700 p-1">
-                      {['1x', '5x', '10x', '60x', 'MAX'].map(spd => (
-                        <button
-                          key={spd}
-                          onClick={() => handleSpeed(spd)}
-                          disabled={!activeSimId}
-                          className={`px-3 py-1 text-xs font-bold rounded transition-colors ${currentSpeed === spd ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white disabled:opacity-50 disabled:hover:text-gray-400'}`}
-                        >
-                          {spd}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="h-8 w-px bg-industrial-700 mx-2"></div>
-
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => handleCommand(currentStatus === 'READY' ? 'start' : 'resume')}
-                        disabled={!activeSimId || currentStatus === 'RUNNING'}
-                        className="flex items-center justify-center w-10 h-10 bg-green-600/20 text-green-500 border border-green-600/50 rounded hover:bg-green-600 hover:text-white disabled:opacity-30 disabled:hover:bg-green-600/20 disabled:hover:text-green-500 transition-colors"
-                        title="Run"
-                      >
-                        <Play className="w-5 h-5 fill-current" />
-                      </button>
-                      <button 
-                        onClick={() => handleCommand('pause')}
-                        disabled={!activeSimId || currentStatus !== 'RUNNING'}
-                        className="flex items-center justify-center w-10 h-10 bg-amber-500/20 text-amber-500 border border-amber-500/50 rounded hover:bg-amber-500 hover:text-white disabled:opacity-30 disabled:hover:bg-amber-500/20 disabled:hover:text-amber-500 transition-colors"
-                        title="Pause"
-                      >
-                        <Pause className="w-5 h-5 fill-current" />
-                      </button>
-                      <button 
-                        onClick={() => handleCommand('reset')}
-                        disabled={!activeSimId}
-                        className="flex items-center justify-center w-10 h-10 bg-red-500/10 text-red-400 border border-red-500/30 rounded hover:bg-red-500 hover:text-white disabled:opacity-30 transition-colors"
-                        title="Reset"
-                      >
-                        <RotateCcw className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* EVENT CONSOLE */}
-              <div className="flex-1 bg-industrial-800 border border-industrial-700 rounded-md flex flex-col overflow-hidden min-h-[300px] shadow-lg">
-                <div className="h-10 bg-industrial-700/50 border-b border-industrial-700 flex items-center px-4">
-                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Event Console</span>
-                </div>
-                <div className="flex-1 overflow-auto bg-[#121315] p-0">
-                  <table className="w-full text-left border-collapse text-sm">
-                    <thead className="sticky top-0 bg-industrial-800 shadow text-gray-400 text-[10px] uppercase tracking-widest z-10">
-                      <tr>
-                        <th className="px-4 py-2 font-semibold border-b border-industrial-700 w-48">Time</th>
-                        <th className="px-4 py-2 font-semibold border-b border-industrial-700 w-24">Severity</th>
-                        <th className="px-4 py-2 font-semibold border-b border-industrial-700 w-48">Source</th>
-                        <th className="px-4 py-2 font-semibold border-b border-industrial-700">Message</th>
-                      </tr>
-                    </thead>
-                    <tbody className="font-mono text-[11px]">
-                      {events.length === 0 ? (
-                        <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-600">No events recorded.</td></tr>
-                      ) : (
-                        events.map((evt, i) => (
-                          <tr key={i} className="border-b border-industrial-800/50 hover:bg-industrial-800/80 transition-colors">
-                            <td className="px-4 py-2 text-gray-400 whitespace-nowrap">{evt.simulation_time.replace('T', ' ')}</td>
-                            <td className="px-4 py-2">
-                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold tracking-wider ${
-                                evt.severity === 'INFO' ? 'bg-blue-900/50 text-blue-400' :
-                                evt.severity === 'WARNING' ? 'bg-amber-900/50 text-amber-400' :
-                                evt.severity === 'CRITICAL' ? 'bg-red-900/50 text-red-400' : 'bg-gray-700 text-gray-300'
-                              }`}>
-                                {evt.severity}
-                              </span>
-                            </td>
-                            <td className="px-4 py-2 text-gray-300 whitespace-nowrap">{evt.source}</td>
-                            <td className="px-4 py-2 text-gray-300">{evt.message}</td>
-                          </tr>
-                        ))
-                      )}
-                      <tr ref={eventsEndRef} />
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
+          <div className="absolute inset-0 flex flex-col">
+            <Blueprint 
+                setValidation={setTopologyValidation} 
+                isFocusMode={isFocusMode} 
+                setIsFocusMode={setIsFocusMode}
+                activeSimId={activeSimId}
+                simState={simState}
+                snapshot={snapshot}
+                events={events}
+                onGraphChange={setCurrentGraph}
+            />
+          </div>
         </div>
       </div>
     </div>

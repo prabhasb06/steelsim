@@ -1,0 +1,78 @@
+# CONTEXT HANDOFF FOR CODEX — STEELSIM & ACAMIS UNIFIED ENGINE
+
+## 1. Project Overview & Architecture
+* **Mission**: Industrial digital twin and AI decision-support system for MSME Induction Furnace & TMT Rebar Rolling Mills (MSME Idea Hackathon 6.0).
+* **Two Core Repositories in Workspace**:
+  1. `C:\Users\prabh\steelsim`: Interactive visual Factory Builder + Deterministic Simulation Engine (React 19 + TypeScript + Vite + Tailwind + React Flow + FastAPI).
+  2. `C:\Users\prabh\acamis`: ACAMIS multi-agent intelligence layer (FastAPI + 6 deterministic domain agents: Production, Maintenance, Safety, Quality, Energy, Logistics).
+* **Core Goal**: Unify **Task 1 (Factory Builder)** and **Task 2 (Simulation Engine)** into a **single, non-disjoint industrial workspace** where users visually construct/wire a plant and simulate it live on the same canvas with real-time machine telemetry.
+
+---
+
+## 2. Work Accomplished & Root-Cause Fixes (`C:\Users\prabh\steelsim`)
+
+### A. Backend API & Engine Enhancements
+1. **Unified Command Endpoint (`backend/app/api/routes.py`)**:
+   - Implemented `POST /api/simulations/{sim_id}/command` accepting `{ command: "start" | "pause" | "resume" | "reset" | "set_speed", payload: { speed?: string } }`.
+   - Updated `GET /api/simulations/{sim_id}` and `POST /api/simulations` to return full snapshots containing live telemetry.
+2. **Schema Resilience & Pydantic Validation (`backend/app/models/schemas.py`)**:
+   - Added `node_telemetry: Dict[str, Any]` and `plant_summary: Dict[str, Any]` to both `SimulationState` and `SimulationSnapshot`.
+   - Added a Pydantic `model_validator` to `SimulationConfiguration` that automatically aliases `{ plant_graph: ... }` to `plant`, resolving a critical bug where simulations were running with an empty 0-node plant.
+   - Added an `id` fallback validator for `SimulationSnapshot` to satisfy legacy test assertions.
+3. **Telemetry Computation Engine (`backend/app/engine/simulator.py`)**:
+   - Added `_calculate_telemetry()` executed on every clock tick and lifecycle transition.
+   - Computes machine operating states (`IDLE`, `RUNNING`), real-time power (MW / kW), operating temperatures (°C), cooling water circulation (m³/h), and throughput (t/h) based on equipment specifications (`RAW_MATERIAL_STORAGE`, `INDUCTION_FURNACE`, `LADLE_REFINING_FURNACE`, `CONTINUOUS_CASTING_MACHINE`, `REHEATING_FURNACE`, `ROLLING_MILL`, `TMT_QUENCHING_BOX`, `COOLING_BED`, `UTILITY_SUBSTATION`, `WATER_COOLING_SYSTEM`).
+   - Computes plant-wide totals (`total_power_mw`, `total_water_m3h`, `active_nodes`, `total_nodes`).
+4. **Backend Test Suite**:
+   - All **24/24 tests pass (100%)** via `pytest` (`test_simulation.py` and `test_topology.py`).
+
+### B. Frontend Clean Single-Interface Architecture
+1. **Master Simulation Deck in App Header (`frontend/src/App.tsx`)**:
+   - Moved simulation controls out of the cramped 48px canvas bar up to the top application header.
+   - **Status Pill:** `READY` (blue) ➔ `RUNNING` (emerald with active pulse) ➔ `PAUSED` (amber).
+   - **Controls:** **Run ▶**, **Pause ⏸**, **Reset ↺**, and Speed buttons (`1x`, `5x`, `10x`, `60x`).
+   - **Real-Time KPIs:** Live `Tick` counter, `Power (MW)`, `Water (m³/h)`, and `Active Machines (N/M)`.
+   - **Graph Synchronization:** Added `currentGraph` state and `onGraphChange` listener to ensure `handleStart` sends the actual live canvas nodes/edges directly to `/api/simulations`.
+   - Removed dead duplicate views where the canvas and an old static HUD table were stacked on top of each other.
+2. **Restored, Clean Canvas Toolbar (`frontend/src/components/PlantBuilder/Blueprint.tsx`)**:
+   - Canvas toolbar restored to spacious, uncluttered engineering actions:
+     - *Left:* Library toggle, Inspector toggle, Issues/Events drawer toggle, Select mode.
+     - *Center:* Auto Connect, Auto Layout, Auto Setup, Validate.
+     - *Right:* Undo, Redo, Zoom In/Out, Fit Plant, Focus Mode, Demo Template, Save, Load, Clear.
+   - Saves template to `localStorage` on Demo load as a fallback.
+3. **Live Machine Cards (`frontend/src/components/PlantBuilder/CustomNode.tsx`)**:
+   - Nodes on the canvas visually respond to simulation ticks:
+     - Emerald status badge with glowing pulse dot when `RUNNING`.
+     - Real-time power draw (MW/kW), temperatures (°C), throughput (t/h), and water flow (m³/h) display dynamically on each equipment card.
+4. **Inspector Telemetry Card (`frontend/src/components/PlantBuilder/Inspector.tsx`)**:
+   - Displays a dedicated "Live Telemetry" card in the right sidebar when any node is inspected during an active run.
+5. **Dual-Tab Slide-up Drawer (`frontend/src/components/PlantBuilder/ValidationPanel.tsx`)**:
+   - Toggles cleanly between **Topology Issues** (design/port errors) and the live **Event Console** (timestamped simulation event journal).
+6. **Frontend Build Verification**:
+   - `npm run build` compiles with **0 TypeScript and Vite errors** (production bundle generated cleanly in ~800ms).
+
+---
+
+## 3. Work Accomplished in `C:\Users\prabh\acamis`
+* **Deterministic Component Catalog (`backend/simulator/components.py`)**: 10 typed equipment models with typed directional ports (`MATERIAL`, `ELECTRICAL`, `WATER`, `SIGNAL`), rated specs, and deterministic state machines.
+* **Typed Topology Validator (`backend/simulator/topology.py`)**: Strict physical connection validation and baseline 25 t/h TMT line with 22 connections (7 material, 9 electrical, 6 water).
+* **Multi-Agent Decision Support (`backend/agents/`)**: 6 domain agents with strict priority hierarchies (`safety` = 1, `quality` = 2, `maintenance` = 3, `production` = 4, `energy` = 5, `logistics` = 6).
+
+---
+
+## 4. Current Operational Endpoints & Ports
+
+* **Frontend**: `http://localhost:5173/` (Vite dev server running via `cmd /c "npm run dev"`)
+* **Backend**: `http://127.0.0.1:8000/` (Uvicorn running via `python -m uvicorn main:app --port 8000`)
+* **Key API Contracts**:
+  * `POST /api/simulations`: Creates simulation instance with `{ plant: { nodes: [...], edges: [...] } }`.
+  * `POST /api/simulations/{id}/command`: Accepts `{ command: "start" | "pause" | "resume" | "reset" | "set_speed", payload: {} }`.
+  * `GET /api/simulations/{id}`: Returns `SimulationState` / `SimulationSnapshot` with `node_telemetry` and `plant_summary`.
+  * `GET /api/plant/template/tmt`: Loads 10-node verified baseline TMT plant topology.
+
+---
+
+## 5. Next Steps for Codex / Developer Roadmap
+1. **Unify ACAMIS Agents into SteelSim**: Connect the 6 ACAMIS domain agents (`safety`, `quality`, `energy`, etc.) to consume `snapshot.node_telemetry` and `snapshot.plant_summary` from SteelSim.
+2. **Dynamic Fault Injection**: Add interactive fault injection from the UI (e.g. tripping a cooling water pump or cutting an electrical line) to test how the plant state and agents react.
+3. **Final Unified Documentation**: Produce consolidated documentation unifying SteelSim (Plant Builder + Simulation) and ACAMIS (Decision Intelligence).

@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Any, Dict, Optional
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from app.models.topology import PlantGraph
 
 class SimulationStatus(str, Enum):
@@ -32,6 +32,14 @@ class SimulationConfiguration(BaseModel):
     seed: int = 42
     plant: PlantGraph = Field(default_factory=PlantGraph)
 
+    @model_validator(mode="before")
+    @classmethod
+    def handle_plant_alias(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "plant_graph" in data and "plant" not in data:
+                data["plant"] = data["plant_graph"]
+        return data
+
 class SimulationEvent(BaseModel):
     id: str
     simulation_id: str
@@ -44,6 +52,7 @@ class SimulationEvent(BaseModel):
 
 class SimulationSnapshot(BaseModel):
     simulation_id: str
+    id: str = ""
     simulation_time: str
     elapsed_seconds: int
     status: SimulationStatus
@@ -51,6 +60,19 @@ class SimulationSnapshot(BaseModel):
     tick: int
     seed: int
     system_health: str = "NORMAL"
+    node_telemetry: Dict[str, Any] = Field(default_factory=dict)
+    plant_summary: Dict[str, Any] = Field(default_factory=dict)
+    events: list[SimulationEvent] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def set_id_fallback(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "id" not in data and "simulation_id" in data:
+                data["id"] = data["simulation_id"]
+            elif "simulation_id" not in data and "id" in data:
+                data["simulation_id"] = data["id"]
+        return data
 
 class SimulationState(BaseModel):
     id: str
@@ -65,6 +87,8 @@ class SimulationState(BaseModel):
     status: SimulationStatus
     configuration: SimulationConfiguration
     events: list[SimulationEvent] = Field(default_factory=list)
+    node_telemetry: Dict[str, Any] = Field(default_factory=dict)
+    plant_summary: Dict[str, Any] = Field(default_factory=dict)
 
 class ChangeSpeedRequest(BaseModel):
     speed: str

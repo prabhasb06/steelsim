@@ -1,19 +1,23 @@
+import { useState } from 'react';
 import type { ValidationResult, ValidationIssue } from '../../types/topology';
-import { AlertTriangle, XCircle, CheckCircle, Info, ChevronUp, ChevronDown } from 'lucide-react';
+import { AlertTriangle, XCircle, CheckCircle, Info, ChevronUp, ChevronDown, Terminal } from 'lucide-react';
 import { useNodes } from '@xyflow/react';
 
 export const ValidationPanel = ({ 
     validation, 
     onSelectNode,
     isOpen,
-    setIsOpen
+    setIsOpen,
+    events = []
 }: { 
     validation: ValidationResult | null, 
     onSelectNode?: (nodeId: string) => void,
     isOpen: boolean,
-    setIsOpen: (open: boolean) => void
+    setIsOpen: (open: boolean) => void,
+    events?: any[]
 }) => {
     const nodes = useNodes();
+    const [activeTab, setActiveTab] = useState<'ISSUES' | 'EVENTS'>('ISSUES');
     
     const errors = validation?.issues.filter(i => i.level === 'ERROR') || [];
     const warnings = validation?.issues.filter(i => i.level === 'WARNING') || [];
@@ -117,32 +121,87 @@ export const ValidationPanel = ({
             
             {/* EXPANDED CONTENT */}
             {isOpen && (
-                <div className="flex-1 overflow-y-auto p-3">
-                    {!validation || validation.issues.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full text-green-500/70">
-                            <CheckCircle className="w-6 h-6 mb-2 opacity-50" />
-                            <div className="text-xs font-medium">No topology issues detected.</div>
-                        </div>
-                    ) : (
-                        <div className="flex gap-4">
-                            {/* Errors Column */}
-                            {errors.length > 0 && (
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-[9px] font-semibold uppercase tracking-widest text-red-500/70 mb-1.5 pl-1">Critical Errors</div>
-                                    <ul className="space-y-1.5">
-                                        {errors.map((iss, i) => renderIssue(iss, i))}
-                                    </ul>
+                <div className="flex-1 overflow-hidden flex flex-col bg-industrial-900">
+                    {/* SUB TABS */}
+                    <div className="flex border-b border-industrial-700 bg-industrial-800/80 px-3">
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setActiveTab('ISSUES'); }}
+                            className={`px-3 py-1.5 text-xs font-semibold border-b-2 transition-colors ${activeTab === 'ISSUES' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-white'}`}
+                        >
+                            Topology Issues {errors.length > 0 ? `(${errors.length})` : ''}
+                        </button>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setActiveTab('EVENTS'); }}
+                            className={`px-3 py-1.5 text-xs font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${activeTab === 'EVENTS' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-400 hover:text-white'}`}
+                        >
+                            <Terminal className="w-3 h-3" /> Event Console {events.length > 0 ? `(${events.length})` : ''}
+                        </button>
+                    </div>
+
+                    {activeTab === 'ISSUES' ? (
+                        <div className="flex-1 overflow-y-auto p-3">
+                            {!validation || validation.issues.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center h-full text-green-500/70">
+                                    <CheckCircle className="w-6 h-6 mb-2 opacity-50" />
+                                    <div className="text-xs font-medium">No topology issues detected.</div>
+                                </div>
+                            ) : (
+                                <div className="flex gap-4">
+                                    {/* Errors Column */}
+                                    {errors.length > 0 && (
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-[9px] font-semibold uppercase tracking-widest text-red-500/70 mb-1.5 pl-1">Critical Errors</div>
+                                            <ul className="space-y-1.5">
+                                                {errors.map((iss, i) => renderIssue(iss, i))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                    
+                                    {/* Warnings Column */}
+                                    {warnings.length > 0 && (
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-[9px] font-semibold uppercase tracking-widest text-amber-500/70 mb-1.5 pl-1">Warnings</div>
+                                            <ul className="space-y-1.5">
+                                                {warnings.map((iss, i) => renderIssue(iss, i))}
+                                            </ul>
+                                        </div>
+                                    )}
                                 </div>
                             )}
-                            
-                            {/* Warnings Column */}
-                            {warnings.length > 0 && (
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-[9px] font-semibold uppercase tracking-widest text-amber-500/70 mb-1.5 pl-1">Warnings</div>
-                                    <ul className="space-y-1.5">
-                                        {warnings.map((iss, i) => renderIssue(iss, i))}
-                                    </ul>
-                                </div>
+                        </div>
+                    ) : (
+                        <div className="flex-1 overflow-y-auto p-2 font-mono text-[11px]">
+                            {events.length === 0 ? (
+                                <div className="p-4 text-center text-gray-500">No simulation events recorded yet. Click Run ▶ to start.</div>
+                            ) : (
+                                <table className="w-full text-left border-collapse">
+                                    <thead className="sticky top-0 bg-industrial-800 text-[9px] uppercase tracking-wider text-gray-400">
+                                        <tr>
+                                            <th className="p-1.5 w-40">Time</th>
+                                            <th className="p-1.5 w-20">Severity</th>
+                                            <th className="p-1.5 w-36">Source</th>
+                                            <th className="p-1.5">Message</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {events.slice().reverse().map((evt, i) => (
+                                            <tr key={i} className="border-b border-industrial-800/60 hover:bg-industrial-800/40">
+                                                <td className="p-1.5 text-gray-400">{evt.simulation_time ? evt.simulation_time.replace('T', ' ').substring(0, 19) : '—'}</td>
+                                                <td className="p-1.5">
+                                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                                        evt.severity === 'CRITICAL' ? 'bg-red-900/50 text-red-400' :
+                                                        evt.severity === 'WARNING' ? 'bg-amber-900/50 text-amber-400' :
+                                                        'bg-blue-900/50 text-blue-400'
+                                                    }`}>
+                                                        {evt.severity}
+                                                    </span>
+                                                </td>
+                                                <td className="p-1.5 text-gray-300">{evt.source}</td>
+                                                <td className="p-1.5 text-gray-200">{evt.message}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             )}
                         </div>
                     )}

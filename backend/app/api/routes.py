@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List
 
+from pydantic import BaseModel, Field
 from app.models.schemas import (
     SimulationConfiguration, SimulationState, SimulationSnapshot, 
     SimulationEvent, ChangeSpeedRequest
@@ -10,6 +11,10 @@ from app.manager.simulation_manager import SimulationManager
 router = APIRouter(prefix="/api")
 
 manager = SimulationManager()
+
+class CommandRequest(BaseModel):
+    command: str
+    payload: dict = Field(default_factory=dict)
 
 @router.get("/health")
 async def health():
@@ -30,6 +35,31 @@ async def get_simulation(sim_id: str):
     if not sim:
         raise HTTPException(status_code=404, detail="Simulation not found")
     return sim.get_state()
+
+@router.post("/simulations/{sim_id}/command", response_model=SimulationSnapshot)
+async def execute_command(sim_id: str, req: CommandRequest):
+    sim = manager.get_simulation(sim_id)
+    if not sim:
+        raise HTTPException(status_code=404, detail="Simulation not found")
+    cmd = req.command.lower()
+    if cmd in ("start", "run", "resume"):
+        try:
+            sim.start()
+        except ValueError:
+            pass
+    elif cmd == "pause":
+        try:
+            sim.pause()
+        except ValueError:
+            pass
+    elif cmd == "reset":
+        sim.reset()
+    elif cmd == "set_speed":
+        speed = req.payload.get("speed", "1x")
+        sim.set_speed(speed)
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown command: {req.command}")
+    return sim.get_snapshot()
 
 @router.post("/simulations/{sim_id}/start", response_model=SimulationState)
 async def start_simulation(sim_id: str):

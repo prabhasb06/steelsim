@@ -47,9 +47,11 @@ export const CustomNode = ({ data, selected }: NodeProps) => {
   
   const nodeIdStr = (data.engineeringId as string) || (data.id as string) || 'NEW';
   const isLocked = !!data.locked;
+  const liveTelemetry = data.liveTelemetry as any;
+  const isRunning = liveTelemetry?.status === 'RUNNING';
 
   return (
-    <div className={`bg-industrial-800 border rounded-sm shadow-[0_4px_12px_rgba(0,0,0,0.5)] w-52 transition-colors relative ${selected ? 'border-blue-500 bg-industrial-800/90 shadow-[0_0_0_1px_rgba(59,130,246,1)]' : 'border-industrial-700 hover:border-industrial-500'}`}>
+    <div className={`bg-industrial-800 border rounded-sm shadow-[0_4px_12px_rgba(0,0,0,0.5)] w-52 transition-colors relative ${isRunning ? 'border-emerald-500/70 shadow-[0_0_12px_rgba(16,185,129,0.15)]' : selected ? 'border-blue-500 bg-industrial-800/90 shadow-[0_0_0_1px_rgba(59,130,246,1)]' : 'border-industrial-700 hover:border-industrial-500'}`}>
       
       {isLocked && (
           <div className="absolute -top-2 -right-2 bg-industrial-900 border border-industrial-700 rounded-full p-1 z-20 text-gray-400 shadow-md" title="Position Locked">
@@ -61,14 +63,48 @@ export const CustomNode = ({ data, selected }: NodeProps) => {
       <div className="bg-industrial-900 px-3 py-2 border-b border-industrial-700 rounded-t-sm">
         <div className="flex justify-between items-center mb-0.5">
             <span className="text-[11px] font-mono font-semibold text-gray-400">{nodeIdStr}</span>
-            <span className={`text-[10px] font-semibold tracking-widest uppercase ${statusColor}`}>{status !== 'VALID' ? status : ''}</span>
+            {liveTelemetry ? (
+              <span className={`inline-flex items-center gap-1 text-[9px] font-mono font-bold tracking-wider px-1.5 py-0.2 rounded ${isRunning ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800/60' : 'bg-industrial-800 text-gray-400 border border-industrial-700'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`}></span>
+                {liveTelemetry.status}
+              </span>
+            ) : (
+              <span className={`text-[10px] font-semibold tracking-widest uppercase ${statusColor}`}>{status !== 'VALID' ? status : ''}</span>
+            )}
         </div>
         <div className="text-[13px] font-semibold text-gray-100 truncate">{data.name as string}</div>
       </div>
       
-      {/* Primary Metrics */}
+      {/* Metrics Area: Live Simulation Telemetry or Static Defaults */}
       <div className="px-3 py-2 min-h-[3rem] bg-[#1a1c1e]">
-         {displayMetrics.length > 0 ? (
+         {liveTelemetry ? (
+             <div className="grid grid-cols-2 gap-y-1 gap-x-2 text-[11px] font-mono">
+                 {liveTelemetry.power_kw > 0 && (
+                     <div className="flex items-baseline">
+                         <span className="text-amber-400 font-semibold">{liveTelemetry.power_mw > 0 ? liveTelemetry.power_mw : liveTelemetry.power_kw}</span>
+                         <span className="text-gray-500 text-[10px] ml-1">{liveTelemetry.power_mw > 0 ? 'MW' : 'kW'}</span>
+                     </div>
+                 )}
+                 {liveTelemetry.temperature_c > 25 && (
+                     <div className="flex items-baseline">
+                         <span className="text-rose-400 font-semibold">{liveTelemetry.temperature_c}</span>
+                         <span className="text-gray-500 text-[10px] ml-1">°C</span>
+                     </div>
+                 )}
+                 {liveTelemetry.throughput_tph > 0 && (
+                     <div className="flex items-baseline">
+                         <span className="text-blue-400 font-semibold">{liveTelemetry.throughput_tph}</span>
+                         <span className="text-gray-500 text-[10px] ml-1">t/h</span>
+                     </div>
+                 )}
+                 {liveTelemetry.water_m3h > 0 && (
+                     <div className="flex items-baseline">
+                         <span className="text-cyan-400 font-semibold">{liveTelemetry.water_m3h}</span>
+                         <span className="text-gray-500 text-[10px] ml-1">m³/h</span>
+                     </div>
+                 )}
+             </div>
+         ) : displayMetrics.length > 0 ? (
              <div className="grid grid-cols-2 gap-y-1.5 gap-x-2">
                  {displayMetrics.map((m, i) => (
                      <div key={i} className="flex items-baseline">

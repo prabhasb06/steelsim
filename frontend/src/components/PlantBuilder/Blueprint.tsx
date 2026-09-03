@@ -30,9 +30,21 @@ interface BlueprintCanvasProps {
     setValidation: (v: ValidationResult | null) => void;
     isFocusMode: boolean;
     setIsFocusMode: (f: boolean) => void;
+    activeSimId?: string | null;
+    simState?: any;
+    snapshot?: any;
+    events?: any[];
+    onGraphChange?: (graph: any) => void;
 }
 
-const BlueprintCanvas = ({ setValidation, isFocusMode, setIsFocusMode }: BlueprintCanvasProps) => {
+const BlueprintCanvas = ({ 
+    setValidation, 
+    isFocusMode, 
+    setIsFocusMode,
+    snapshot,
+    events = [],
+    onGraphChange
+}: BlueprintCanvasProps) => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<any>([]);
@@ -63,6 +75,25 @@ const BlueprintCanvas = ({ setValidation, isFocusMode, setIsFocusMode }: Bluepri
       setIssuesOpen(false);
     }
   }, [isFocusMode]);
+
+  // Synchronize live simulation telemetry to nodes
+  useEffect(() => {
+    if (!snapshot?.node_telemetry) return;
+    setNodes(nds => nds.map(n => {
+      const telemetry = snapshot.node_telemetry[n.id];
+      if (telemetry) {
+        return {
+          ...n,
+          data: {
+            ...n.data,
+            liveTelemetry: telemetry,
+            simulationStatus: telemetry.status
+          }
+        };
+      }
+      return n;
+    }));
+  }, [snapshot?.node_telemetry, setNodes]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -99,6 +130,13 @@ const BlueprintCanvas = ({ setValidation, isFocusMode, setIsFocusMode }: Bluepri
           connection_type: edge.data?.connection_type || "MATERIAL"
       }))
   });
+
+  // Notify parent of graph changes
+  useEffect(() => {
+    if (onGraphChange && nodes.length > 0) {
+      onGraphChange(getGraph(nodes, edges));
+    }
+  }, [nodes, edges]);
 
   const saveHistory = (n: any[], e: Edge[]) => {
       const newHistory = history.slice(0, historyIndex + 1);
@@ -749,6 +787,9 @@ Apply Setup?`;
           setNodes(rn);
           setEdges(re);
           saveHistory(rn, re);
+          try {
+              localStorage.setItem('steelsim_plant', JSON.stringify({ nodes: tmt.nodes, edges: tmt.edges }));
+          } catch(e){}
           setTimeout(() => fitView({ padding: 0.2, minZoom: 1.0, maxZoom: 1.2, duration: 800 }), 100);
           validateGraph(rn, re);
       }
@@ -1008,6 +1049,7 @@ onNodesDelete={() => setTimeout(() => { saveHistory(nodes, edges); validateGraph
                 validation={currentValidation} 
                 isOpen={issuesOpen}
                 setIsOpen={setIssuesOpen}
+                events={events}
                 onSelectNode={(id) => {
                     setNodes(nds => nds.map(n => ({ ...n, selected: n.id === id })));
                     const node = nodes.find(n => n.id === id);
@@ -1027,10 +1069,10 @@ onNodesDelete={() => setTimeout(() => { saveHistory(nodes, edges); validateGraph
   );
 }
 
-export const Blueprint = ({ setValidation, isFocusMode, setIsFocusMode }: BlueprintCanvasProps) => {
+export const Blueprint = (props: BlueprintCanvasProps) => {
     return (
         <ReactFlowProvider>
-            <BlueprintCanvas setValidation={setValidation} isFocusMode={isFocusMode} setIsFocusMode={setIsFocusMode} />
+            <BlueprintCanvas {...props} />
         </ReactFlowProvider>
     );
 }

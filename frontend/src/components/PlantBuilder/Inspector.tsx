@@ -123,6 +123,50 @@ export const Inspector = ({ selectedNode, selectedEdge, edges, nodes, onDeleteEd
 
             {/* CONTENT */}
             <div className="flex-1 overflow-y-auto">
+                {(() => {
+                    const nodeAny = selectedNode as any;
+                    const liveTelemetry = nodeAny?.data?.liveTelemetry || nodeAny?.liveTelemetry;
+                    if (!liveTelemetry) return null;
+                    return (
+                        <div className="p-3 border-b border-industrial-700 bg-industrial-900/60">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400 flex items-center gap-1.5">
+                                    <span className={`w-2 h-2 rounded-full ${liveTelemetry.status === 'RUNNING' ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
+                                    Live Telemetry
+                                </span>
+                                <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800/60">
+                                    {liveTelemetry.status}
+                                </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                                <div className="bg-industrial-800 p-2 rounded border border-industrial-700">
+                                    <div className="text-[10px] text-gray-400 uppercase">Power Draw</div>
+                                    <div className="text-amber-400 font-bold mt-0.5">
+                                        {liveTelemetry.power_mw > 0 ? `${liveTelemetry.power_mw} MW` : `${liveTelemetry.power_kw} kW`}
+                                    </div>
+                                </div>
+                                <div className="bg-industrial-800 p-2 rounded border border-industrial-700">
+                                    <div className="text-[10px] text-gray-400 uppercase">Temperature</div>
+                                    <div className="text-rose-400 font-bold mt-0.5">
+                                        {liveTelemetry.temperature_c} °C
+                                    </div>
+                                </div>
+                                <div className="bg-industrial-800 p-2 rounded border border-industrial-700">
+                                    <div className="text-[10px] text-gray-400 uppercase">Throughput</div>
+                                    <div className="text-blue-400 font-bold mt-0.5">
+                                        {liveTelemetry.throughput_tph} t/h
+                                    </div>
+                                </div>
+                                <div className="bg-industrial-800 p-2 rounded border border-industrial-700">
+                                    <div className="text-[10px] text-gray-400 uppercase">Water Flow</div>
+                                    <div className="text-cyan-400 font-bold mt-0.5">
+                                        {liveTelemetry.water_m3h} m³/h
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
                 
                 {/* STATUS & VALIDATION */}
                 {issues.length > 0 && (
