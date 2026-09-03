@@ -29,6 +29,11 @@ def test_create_simulation():
     assert data["seed"] == 42
     assert "sim_" in data["id"]
 
+def test_create_accepts_legacy_plant_graph_payload():
+    res = client.post("/api/simulations", json={"plant_graph": {"nodes": [], "edges": []}})
+    assert res.status_code == 200
+    assert res.json()["configuration"]["plant"]["nodes"] == []
+
 def test_ready_to_running():
     res = client.post("/api/simulations", json={"seed": 42})
     sim_id = res.json()["id"]
