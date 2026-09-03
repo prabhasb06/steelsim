@@ -1,6 +1,7 @@
 import { Handle, Position } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 import type { PortDef, PortType, EngineeringQuantity } from '../../types/topology';
+import type { NodeTelemetry } from '../../types';
 
 const getPortColor = (type: PortType) => {
   switch (type) {
@@ -28,6 +29,9 @@ export const CustomNode = ({ data, selected }: NodeProps) => {
   else if (params.capacity) displayMetrics.push(params.capacity);
   else if (params.feed_capacity) displayMetrics.push(params.feed_capacity);
   else if (params.dispatch) displayMetrics.push(params.dispatch);
+  else if (params.available_power) displayMetrics.push(params.available_power);
+  else if (params.available_flow) displayMetrics.push(params.available_flow);
+  else if (params.flow) displayMetrics.push(params.flow);
   else if (params.inventory) displayMetrics.push(params.inventory);
 
   // Prioritize secondary process metrics (temp, power)
@@ -47,7 +51,7 @@ export const CustomNode = ({ data, selected }: NodeProps) => {
   
   const nodeIdStr = (data.engineeringId as string) || (data.id as string) || 'NEW';
   const isLocked = !!data.locked;
-  const liveTelemetry = data.liveTelemetry as any;
+  const liveTelemetry = data.liveTelemetry as NodeTelemetry | undefined;
   const isRunning = liveTelemetry?.status === 'RUNNING';
 
   return (

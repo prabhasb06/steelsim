@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { LayoutDashboard, Factory, Activity, Truck, Wrench, Shield, Zap, Cpu, Play, Pause, RotateCcw } from 'lucide-react';
 import { Blueprint } from './components/PlantBuilder/Blueprint';
+import { simulationApi } from './api';
+import type { SimulationCommand, SimulationEvent, SimulationSnapshot, SimulationState } from './types';
+import type { PlantGraph } from './types/topology';
 
 type ViewMode = 'OVERVIEW' | 'BUILDER' | 'SIMULATION' | 'OPTIMIZATION';
 
@@ -8,108 +11,125 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('BUILDER');
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [topologyValidation, setTopologyValidation] = useState<any>(null);
   const [activeSimId, setActiveSimId] = useState<string | null>(null);
-  const [simState, setSimState] = useState<any>(null);
+  const [simState, setSimState] = useState<SimulationState | null>(null);
   const [backendConnected, setBackendConnected] = useState(true);
-  const [currentGraph, setCurrentGraph] = useState<any>(null);
-  
-  const [snapshot, setSnapshot] = useState<any>(null);
-  const [events, setEvents] = useState<any[]>([]);
-  const eventsEndRef = useRef<HTMLTableRowElement>(null);
+  const [currentGraph, setCurrentGraph] = useState<PlantGraph | null>(null);
+  const [snapshot, setSnapshot] = useState<SimulationSnapshot | null>(null);
+  const [events, setEvents] = useState<SimulationEvent[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+  const simulatedGraphRef = useRef<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/health')
-      .then(res => setBackendConnected(res.ok))
-      .catch(() => setBackendConnected(false));
+    let mounted = true;
+    const checkHealth = async () => {
+      try {
+        await simulationApi.health();
+        if (mounted) setBackendConnected(true);
+      } catch {
+        if (mounted) setBackendConnected(false);
+      }
+    };
+    void checkHealth();
+    const interval = window.setInterval(checkHealth, 10_000);
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
     if (!activeSimId) return;
-    const interval = setInterval(async () => {
+    let mounted = true;
+    const pollSnapshot = async () => {
       try {
-        const res = await fetch(`/api/simulations/${activeSimId}`);
-        if (res.ok) {
-          const data = await res.json();
+        const data = await simulationApi.snapshot(activeSimId);
+        if (mounted) {
           setSnapshot(data);
-          if (data.events && data.events.length > events.length) {
-              setEvents(data.events);
-          }
+          setEvents(data.events);
+          setBackendConnected(true);
         }
-      } catch (e) {
-        console.error(e);
+      } catch (error) {
+        if (mounted) {
+          setBackendConnected(false);
+          setErrorMessage(error instanceof Error ? error.message : 'Unable to read simulation state.');
+        }
       }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [activeSimId, events.length]);
+    };
+    void pollSnapshot();
+    const interval = window.setInterval(pollSnapshot, 1000);
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+    };
+  }, [activeSimId]);
 
-  useEffect(() => {
-      eventsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [events]);
+  const applySnapshot = (next: SimulationSnapshot) => {
+    setSnapshot(next);
+    setEvents(next.events);
+    setBackendConnected(true);
+  };
 
   const handleStart = async () => {
-    if (topologyValidation && !topologyValidation.is_valid) {
-      console.warn("Starting simulation with active topology validation issues.");
-    }
-    if (!activeSimId) {
-      let graph = currentGraph;
-      if (!graph || !graph.nodes || graph.nodes.length === 0) {
-        try {
-          const graphStr = localStorage.getItem('steelsim_plant');
-          if (graphStr) graph = JSON.parse(graphStr);
-        } catch(e){}
+    if (isBusy) return;
+    setErrorMessage(null);
+    setIsBusy(true);
+    try {
+      const graph = currentGraph;
+      if (!graph?.nodes.length) {
+        throw new Error('Build or load a plant before starting the simulation.');
       }
 
-      try {
-        const res = await fetch('/api/simulations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ plant: graph || {} })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setActiveSimId(data.id);
-          setSimState(data);
-          // Start simulation
-          await fetch(`/api/simulations/${data.id}/command`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ command: 'start', payload: {} })
-          });
-        }
-      } catch(e) {
-        console.error(e);
+      const validation = await simulationApi.validate(graph);
+      if (!validation.is_valid) {
+        const blocking = validation.issues.filter(issue => issue.blocks_simulation).length;
+        throw new Error(`Simulation blocked: resolve ${blocking || validation.issues.length} topology issue${blocking === 1 ? '' : 's'} first.`);
       }
-    } else {
-      const current = snapshot?.status || simState?.status;
-      handleCommand(current === 'PAUSED' ? 'resume' : 'start');
+
+      const graphSignature = JSON.stringify(graph);
+      const graphChanged = simulatedGraphRef.current !== graphSignature;
+      let simulationId = activeSimId;
+      if (!simulationId || graphChanged) {
+        const created = await simulationApi.create(graph);
+        simulationId = created.id;
+        simulatedGraphRef.current = graphSignature;
+        setActiveSimId(created.id);
+        setSimState(created);
+        setSnapshot(null);
+        setEvents(created.events);
+      }
+
+      const current = graphChanged ? 'READY' : (snapshot?.status ?? simState?.status ?? 'READY');
+      const next = await simulationApi.command(simulationId, current === 'PAUSED' ? 'resume' : 'start');
+      applySnapshot(next);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to start the simulation.');
+    } finally {
+      setIsBusy(false);
     }
   };
 
-  const handleCommand = async (command: string) => {
-    if (!activeSimId) return;
-    const res = await fetch(`/api/simulations/${activeSimId}/command`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command, payload: {} })
-    });
-    if (res.ok) {
-        const state = await res.json();
-        setSimState(state);
-        if (command === 'reset') setSnapshot(null);
+  const handleCommand = async (command: SimulationCommand) => {
+    if (!activeSimId || isBusy) return;
+    setErrorMessage(null);
+    setIsBusy(true);
+    try {
+      applySnapshot(await simulationApi.command(activeSimId, command));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : `Unable to ${command} the simulation.`);
+    } finally {
+      setIsBusy(false);
     }
   };
 
   const handleSpeed = async (speed: string) => {
-    if (!activeSimId) return;
-    const res = await fetch(`/api/simulations/${activeSimId}/command`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: 'set_speed', payload: { speed } })
-    });
-    if (res.ok) {
-        const state = await res.json();
-        setSimState(state);
+    if (!activeSimId || isBusy) return;
+    setErrorMessage(null);
+    try {
+      applySnapshot(await simulationApi.command(activeSimId, 'set_speed', { speed }));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to change simulation speed.');
     }
   };
 
@@ -155,7 +175,7 @@ function App() {
           <div className="flex items-center space-x-3">
             <div className="flex items-center gap-2">
               <span className="font-bold text-white tracking-wider text-base">SteelSim</span>
-              <span className="text-xs bg-industrial-700 text-gray-300 px-2 py-0.5 rounded font-mono">TMT Mini-Mill</span>
+              <span className="hidden 2xl:inline text-xs bg-industrial-700 text-gray-300 px-2 py-0.5 rounded font-mono">TMT Mini-Mill</span>
             </div>
             
             {/* Status Badge */}
@@ -174,7 +194,7 @@ function App() {
             <div className="flex items-center gap-1.5 bg-industrial-900/80 p-1 rounded-md border border-industrial-700">
               <button 
                 onClick={handleStart}
-                disabled={currentStatus === 'RUNNING'}
+                disabled={currentStatus === 'RUNNING' || isBusy}
                 className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600/20 text-emerald-400 border border-emerald-600/50 rounded hover:bg-emerald-600 hover:text-white disabled:opacity-30 disabled:hover:bg-emerald-600/20 disabled:hover:text-emerald-400 transition-colors text-xs font-bold"
                 title="Run Simulation"
               >
@@ -183,7 +203,7 @@ function App() {
               </button>
               <button 
                 onClick={() => handleCommand('pause')}
-                disabled={currentStatus !== 'RUNNING'}
+                disabled={currentStatus !== 'RUNNING' || isBusy}
                 className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/20 text-amber-400 border border-amber-500/50 rounded hover:bg-amber-500 hover:text-white disabled:opacity-30 disabled:hover:bg-amber-500/20 disabled:hover:text-amber-400 transition-colors text-xs font-bold"
                 title="Pause Simulation"
               >
@@ -192,7 +212,8 @@ function App() {
               </button>
               <button 
                 onClick={() => handleCommand('reset')}
-                className="flex items-center gap-1.5 px-2.5 py-1 bg-red-500/10 text-red-400 border border-red-500/30 rounded hover:bg-red-500 hover:text-white transition-colors text-xs font-bold"
+                disabled={!activeSimId || isBusy}
+                className="flex items-center gap-1.5 px-2.5 py-1 bg-red-500/10 text-red-400 border border-red-500/30 rounded hover:bg-red-500 hover:text-white disabled:opacity-30 disabled:hover:bg-red-500/10 disabled:hover:text-red-400 transition-colors text-xs font-bold"
                 title="Reset Simulation"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -206,7 +227,8 @@ function App() {
                 <button
                   key={spd}
                   onClick={() => handleSpeed(spd)}
-                  className={`px-2 py-0.5 rounded transition-colors ${currentSpeed === spd ? 'bg-blue-600 text-white font-bold' : 'text-gray-400 hover:text-white'}`}
+                  disabled={!activeSimId || isBusy}
+                  className={`px-2 py-0.5 rounded transition-colors disabled:opacity-30 ${currentSpeed === spd ? 'bg-blue-600 text-white font-bold' : 'text-gray-400 hover:text-white'}`}
                 >
                   {spd}
                 </button>
@@ -214,7 +236,7 @@ function App() {
             </div>
 
             {/* Real-time Telemetry Readout */}
-            <div className="flex items-center gap-4 bg-industrial-900/60 px-3 py-1 rounded border border-industrial-700/80 text-xs font-mono">
+            <div className="flex items-center gap-2 2xl:gap-4 bg-industrial-900/60 px-3 py-1 rounded border border-industrial-700/80 text-xs font-mono">
               <div>
                 <span className="text-gray-500 text-[10px] uppercase mr-1.5">Tick</span>
                 <span className="text-gray-200 font-bold">{snapshot?.tick ?? simState?.tick ?? 0}</span>
@@ -244,9 +266,9 @@ function App() {
           </div>
 
           {/* Right: API Health Status */}
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2" title={backendConnected ? 'Engine Online' : 'Engine Offline'}>
              <span className={`w-2 h-2 rounded-full ${backendConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 animate-pulse'}`}></span>
-             <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+             <span className="hidden 2xl:inline text-[10px] font-bold uppercase tracking-widest text-gray-400">
                {backendConnected ? 'Engine Online' : 'Engine Offline'}
              </span>
           </div>
@@ -255,9 +277,14 @@ function App() {
 
         {/* CONTENT AREA: UNIFIED CANVAS */}
         <div className="flex-1 overflow-hidden relative bg-[#121315]">
+          {errorMessage && (
+            <div role="alert" className="absolute top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 max-w-xl rounded border border-red-700/70 bg-red-950/95 px-4 py-2 text-xs text-red-100 shadow-xl">
+              <span>{errorMessage}</span>
+              <button onClick={() => setErrorMessage(null)} className="text-red-300 hover:text-white font-bold" aria-label="Dismiss error">×</button>
+            </div>
+          )}
           <div className="absolute inset-0 flex flex-col">
             <Blueprint 
-                setValidation={setTopologyValidation} 
                 isFocusMode={isFocusMode} 
                 setIsFocusMode={setIsFocusMode}
                 activeSimId={activeSimId}

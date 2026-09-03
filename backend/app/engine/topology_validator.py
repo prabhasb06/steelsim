@@ -20,7 +20,6 @@ class ValidationResult(BaseModel):
 def validate_topology(graph: PlantGraph) -> ValidationResult:
     issues: List[ValidationIssue] = []
     node_map = {n.id: n for n in graph.nodes}
-    edge_map = {e.id: e for e in graph.edges}
     
     # Check empty
     if not graph.nodes:
@@ -35,7 +34,8 @@ def validate_topology(graph: PlantGraph) -> ValidationResult:
     # 1. Port Types & Duplicate/Self Connections
     material_adj: Dict[str, List[str]] = {n.id: [] for n in graph.nodes}
     water_consumers = set()
-    elec_consumers = set()
+    electrical_consumers = set()
+    connection_keys = set()
     
     for edge in graph.edges:
         source = node_map.get(edge.source_node)
@@ -63,13 +63,35 @@ def validate_topology(graph: PlantGraph) -> ValidationResult:
                 engineering_reason="Cannot pipe incompatible industrial domains.",
                 suggested_resolution="Connect to a compatible port.",
                 blocks_simulation=True))
+
+        if src_port.type != edge.connection_type or tgt_port.type != edge.connection_type:
+            issues.append(ValidationIssue(
+                level="ERROR", issue_code="CONNECTION_TYPE_MISMATCH", edge_id=edge.id,
+                message="Connection type does not match its endpoint ports.",
+                engineering_reason="The declared industrial domain must match both connected ports.",
+                blocks_simulation=True))
+
+        if src_port.direction not in ("OUT", "BIDIRECTIONAL") or tgt_port.direction not in ("IN", "BIDIRECTIONAL"):
+            issues.append(ValidationIssue(
+                level="ERROR", issue_code="PORT_DIRECTION_INVALID", edge_id=edge.id,
+                message="Connection must run from an output port to an input port.",
+                engineering_reason="Reversed industrial flow would produce an invalid topology.",
+                blocks_simulation=True))
+
+        connection_key = (edge.source_node, edge.source_port, edge.target_node, edge.target_port, edge.connection_type)
+        if connection_key in connection_keys:
+            issues.append(ValidationIssue(
+                level="ERROR", issue_code="DUPLICATE_CONNECTION", edge_id=edge.id,
+                message="Duplicate connection detected.",
+                blocks_simulation=True))
+        connection_keys.add(connection_key)
             
         if edge.connection_type == PortType.MATERIAL:
             material_adj[edge.source_node].append(edge.target_node)
         elif edge.connection_type == PortType.WATER:
             water_consumers.add(edge.target_node)
         elif edge.connection_type == PortType.ELECTRICAL:
-            elec_consumers.add(edge.target_node)
+            electrical_consumers.add(edge.target_node)
 
     # 2. Sequence check & Circular Flow for MATERIAL
     visited = set()
@@ -125,6 +147,13 @@ def validate_topology(graph: PlantGraph) -> ValidationResult:
             issues.append(ValidationIssue(level="ERROR", issue_code="UTILITY_REQUIRED", node_id=node.id, 
                 message=f"Missing cooling-water supply for {node.name}.", 
                 engineering_reason="Component depends on water to function safely.", 
+                blocks_simulation=True))
+
+        req_electrical = any(p.type == PortType.ELECTRICAL and p.direction == "IN" for p in node.ports)
+        if req_electrical and node.id not in electrical_consumers:
+            issues.append(ValidationIssue(level="ERROR", issue_code="UTILITY_REQUIRED", node_id=node.id,
+                message=f"Missing electrical supply for {node.name}.",
+                engineering_reason="Component requires a connected electrical source to operate.",
                 blocks_simulation=True))
                 
         # Negative capacity check

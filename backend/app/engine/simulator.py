@@ -9,6 +9,8 @@ from app.models.schemas import (
 )
 
 class SteelSimEngine:
+    MAX_EVENTS = 500
+
     def __init__(self, config: SimulationConfiguration):
         self.id = f"sim_{uuid.uuid4().hex[:8]}"
         self.name = config.name
@@ -52,17 +54,25 @@ class SteelSimEngine:
         phase = self.tick % 60
         load_factor = 0.92 + ((phase % 7) * 0.02) if is_running else 0.0
 
-        specs = {
-            "RAW_MATERIAL_STORAGE": {"power": 15.0, "water": 0.0, "temp": 30.0, "tph": 25.0},
-            "INDUCTION_FURNACE": {"power": 12500.0, "water": 120.0, "temp": 1620.0, "tph": 25.0},
-            "LADLE_REFINING_FURNACE": {"power": 3200.0, "water": 45.0, "temp": 1580.0, "tph": 25.0},
-            "CONTINUOUS_CASTING_MACHINE": {"power": 450.0, "water": 90.0, "temp": 1150.0, "tph": 25.0},
-            "REHEATING_FURNACE": {"power": 180.0, "water": 20.0, "temp": 1200.0, "tph": 25.0},
-            "ROLLING_MILL": {"power": 2800.0, "water": 60.0, "temp": 1050.0, "tph": 25.0},
-            "TMT_QUENCHING_BOX": {"power": 75.0, "water": 150.0, "temp": 580.0, "tph": 25.0},
-            "COOLING_BED": {"power": 95.0, "water": 0.0, "temp": 150.0, "tph": 25.0},
-            "UTILITY_SUBSTATION": {"power": 0.0, "water": 0.0, "temp": 45.0, "tph": 0.0},
-            "WATER_COOLING_SYSTEM": {"power": 120.0, "water": 0.0, "temp": 32.0, "tph": 0.0},
+        # Defaults cover only values that are intentionally not exposed as
+        # configurable catalogue parameters. Configured engineering values
+        # always take precedence.
+        defaults = {
+            "RAW_MATERIAL_STORAGE": {"power_kw": 15.0, "temp": 30.0},
+            "BILLET_YARD": {"power_kw": 35.0, "temp": 30.0},
+            "CHARGING_TABLE": {"power_kw": 45.0, "temp": 35.0},
+            "ROUGHING_MILL": {"water": 60.0, "temp": 1050.0},
+            "INTERMEDIATE_MILL": {"water": 40.0, "temp": 930.0},
+            "FINISHING_MILL": {"water": 35.0, "temp": 850.0},
+            "TMT_COOLING": {"power_kw": 75.0, "temp": 580.0},
+            "COOLING_BED": {"power_kw": 95.0, "temp": 150.0},
+            "CUTTING_UNIT": {"power_kw": 120.0, "temp": 80.0},
+            "BUNDLING_UNIT": {"power_kw": 55.0, "temp": 45.0},
+            "WEIGHING": {"power_kw": 5.0, "temp": 30.0},
+            "FINISHED_GOODS": {"power_kw": 10.0, "temp": 30.0},
+            "TRANSFORMER": {"power_kw": 20.0, "temp": 45.0},
+            "WATER_SYSTEM": {"power_kw": 25.0, "temp": 32.0},
+            "COMPRESSOR": {"power_kw": 120.0, "temp": 50.0},
         }
 
         telemetry = {}
@@ -72,13 +82,32 @@ class SteelSimEngine:
 
         nodes = self.config.plant.nodes if self.config.plant else []
         for n in nodes:
-            c_class = n.component_class or (n.data.get("component_class") if hasattr(n, "data") and isinstance(n.data, dict) else "")
-            spec = specs.get(c_class, {"power": 50.0, "water": 10.0, "temp": 50.0, "tph": 25.0})
+            c_class = n.component_class.value
+            spec = defaults.get(c_class, {})
+            params = n.parameters
 
-            pwr = round(spec["power"] * load_factor, 1) if is_running else 0.0
-            wat = round(spec["water"] * (0.95 + (phase % 4) * 0.02), 1) if is_running else 0.0
-            tph = round(spec["tph"] * load_factor, 1) if is_running else 0.0
-            temp = round(spec["temp"] + (phase % 5) - 2.0, 1) if is_running else 25.0
+            power_qty = params.get("power")
+            if power_qty:
+                rated_power_kw = power_qty.value * 1000.0 if power_qty.unit.upper() == "MW" else power_qty.value
+            else:
+                rated_power_kw = spec.get("power_kw", 0.0)
+
+            water_qty = params.get("water_flow")
+            rated_water = water_qty.value if water_qty else spec.get("water", 0.0)
+
+            throughput_qty = next(
+                (params[key] for key in ("throughput", "feed_capacity", "dispatch") if key in params),
+                None,
+            )
+            rated_throughput = throughput_qty.value if throughput_qty else 0.0
+
+            temperature_qty = params.get("temperature")
+            rated_temperature = temperature_qty.value if temperature_qty else spec.get("temp", 25.0)
+
+            pwr = round(rated_power_kw * load_factor, 1) if is_running else 0.0
+            wat = round(rated_water * (0.95 + (phase % 4) * 0.02), 1) if is_running else 0.0
+            tph = round(rated_throughput * load_factor, 1) if is_running else 0.0
+            temp = round(rated_temperature + (phase % 5) - 2.0, 1) if is_running else 25.0
             status_str = "RUNNING" if is_running else "IDLE"
 
             telemetry[n.id] = {
@@ -116,6 +145,8 @@ class SteelSimEngine:
             message=message,
         )
         self.events.append(event)
+        if len(self.events) > self.MAX_EVENTS:
+            del self.events[:-self.MAX_EVENTS]
         return event
 
     def get_state(self) -> SimulationState:
@@ -227,9 +258,9 @@ class SteelSimEngine:
                 if sleep_time > 0:
                     await asyncio.sleep(sleep_time)
                 else:
-                    # In MAX mode, yield event loop every 100 ticks to not block API completely
-                    if self.tick % 100 == 0:
-                        await asyncio.sleep(0)
+                    # MAX mode is unthrottled but still yields on every tick so
+                    # control and snapshot requests remain responsive.
+                    await asyncio.sleep(0)
                         
         except asyncio.CancelledError:
             pass

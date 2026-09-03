@@ -36,6 +36,7 @@ async def load_tmt_template():
     # Add required baseline utilities so it isn't broken by default
     graph.nodes.append(create_equipment_node(ComponentClass.WATER_SYSTEM))
     graph.nodes.append(create_equipment_node(ComponentClass.TRANSFORMER))
+    graph.nodes.append(create_equipment_node(ComponentClass.ELECTRICAL_SUPPLY))
     
     # Use our new Auto Setup logic to perfectly connect it and lay it out
     proposal = propose_auto_setup(graph)

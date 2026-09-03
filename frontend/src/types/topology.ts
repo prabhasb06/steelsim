@@ -48,7 +48,7 @@ export interface EquipmentNode {
     position: { x: number; y: number };
     ports: PortDef[];
     parameters: Record<string, EngineeringQuantity>;
-    metadata: Record<string, any>;
+    metadata: Record<string, unknown>;
 }
 
 export interface ConnectionEdge {

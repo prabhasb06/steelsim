@@ -1,5 +1,8 @@
+import type { PlantGraph } from './types/topology';
+
 export type SimulationStatus = "READY" | "RUNNING" | "PAUSED" | "COMPLETED" | "ERROR";
 export type EventSeverity = "INFO" | "NOTICE" | "WARNING" | "CRITICAL";
+export type SimulationCommand = "start" | "run" | "resume" | "pause" | "reset" | "set_speed";
 
 export interface SimulationEvent {
     id: string;
@@ -9,7 +12,31 @@ export interface SimulationEvent {
     severity: EventSeverity;
     source: string;
     message: string;
-    metadata: Record<string, any>;
+    metadata: Record<string, unknown>;
+}
+
+export interface NodeTelemetry {
+    id: string;
+    status: "IDLE" | "RUNNING";
+    power_kw: number;
+    power_mw: number;
+    water_m3h: number;
+    temperature_c: number;
+    throughput_tph: number;
+}
+
+export interface PlantSummary {
+    total_power_kw: number;
+    total_power_mw: number;
+    total_water_m3h: number;
+    active_nodes: number;
+    total_nodes: number;
+}
+
+export interface SimulationConfiguration {
+    name: string;
+    seed: number;
+    plant: PlantGraph;
 }
 
 export interface SimulationState {
@@ -23,12 +50,15 @@ export interface SimulationState {
     tick: number;
     speed: string;
     status: SimulationStatus;
-    configuration: Record<string, any>;
+    configuration: SimulationConfiguration;
     events: SimulationEvent[];
+    node_telemetry: Record<string, NodeTelemetry>;
+    plant_summary: PlantSummary;
 }
 
 export interface SimulationSnapshot {
     simulation_id: string;
+    id: string;
     simulation_time: string;
     elapsed_seconds: number;
     status: SimulationStatus;
@@ -36,4 +66,7 @@ export interface SimulationSnapshot {
     tick: number;
     seed: number;
     system_health: string;
+    node_telemetry: Record<string, NodeTelemetry>;
+    plant_summary: PlantSummary;
+    events: SimulationEvent[];
 }

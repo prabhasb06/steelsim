@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from typing import List
 
 from pydantic import BaseModel, Field
@@ -42,23 +42,22 @@ async def execute_command(sim_id: str, req: CommandRequest):
     if not sim:
         raise HTTPException(status_code=404, detail="Simulation not found")
     cmd = req.command.lower()
-    if cmd in ("start", "run", "resume"):
-        try:
+    try:
+        if cmd in ("start", "run", "resume"):
             sim.start()
-        except ValueError:
-            pass
-    elif cmd == "pause":
-        try:
+        elif cmd == "pause":
             sim.pause()
-        except ValueError:
-            pass
-    elif cmd == "reset":
-        sim.reset()
-    elif cmd == "set_speed":
-        speed = req.payload.get("speed", "1x")
-        sim.set_speed(speed)
-    else:
-        raise HTTPException(status_code=400, detail=f"Unknown command: {req.command}")
+        elif cmd == "reset":
+            sim.reset()
+        elif cmd == "set_speed":
+            speed = req.payload.get("speed", "1x")
+            if not isinstance(speed, str):
+                raise ValueError("Speed must be a string")
+            sim.set_speed(speed)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown command: {req.command}")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return sim.get_snapshot()
 
 @router.post("/simulations/{sim_id}/start", response_model=SimulationState)

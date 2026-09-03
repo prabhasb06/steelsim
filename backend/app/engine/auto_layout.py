@@ -13,8 +13,7 @@ def apply_auto_layout(graph: PlantGraph) -> PlantGraph:
         ComponentClass.COMPRESSOR
     }
     SUPPORT_CLASSES = {
-        ComponentClass.MAINTENANCE_STATION, ComponentClass.QUALITY_INSPECTION,
-        ComponentClass.WEIGHING
+        ComponentClass.MAINTENANCE_STATION, ComponentClass.QUALITY_INSPECTION
     }
 
     in_degree = {n.id: 0 for n in graph.nodes}
@@ -70,6 +69,15 @@ def apply_auto_layout(graph: PlantGraph) -> PlantGraph:
     # Group utilities and support
     util_nodes = [n for n in graph.nodes if n.component_class in UTILITY_CLASSES]
     supp_nodes = [n for n in graph.nodes if n.component_class in SUPPORT_CLASSES]
+
+    utility_order = {
+        ComponentClass.ELECTRICAL_SUPPLY: 0,
+        ComponentClass.TRANSFORMER: 1,
+        ComponentClass.WATER_SYSTEM: 2,
+        ComponentClass.WATER_PUMP: 3,
+        ComponentClass.COMPRESSOR: 4,
+    }
+    util_nodes.sort(key=lambda node: utility_order[node.component_class])
 
     for i, node in enumerate(util_nodes):
         node.position = {"x": START_X + (i * X_SPACING), "y": START_Y - LANE_Y_SPACING}

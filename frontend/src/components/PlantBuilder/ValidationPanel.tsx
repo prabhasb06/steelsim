@@ -2,19 +2,23 @@ import { useState } from 'react';
 import type { ValidationResult, ValidationIssue } from '../../types/topology';
 import { AlertTriangle, XCircle, CheckCircle, Info, ChevronUp, ChevronDown, Terminal } from 'lucide-react';
 import { useNodes } from '@xyflow/react';
+import type { SimulationEvent } from '../../types';
+import type { SimulationStatus } from '../../types';
 
 export const ValidationPanel = ({ 
     validation, 
     onSelectNode,
     isOpen,
     setIsOpen,
+    simulationStatus,
     events = []
 }: { 
     validation: ValidationResult | null, 
     onSelectNode?: (nodeId: string) => void,
     isOpen: boolean,
     setIsOpen: (open: boolean) => void,
-    events?: any[]
+    simulationStatus?: SimulationStatus,
+    events?: SimulationEvent[]
 }) => {
     const nodes = useNodes();
     const [activeTab, setActiveTab] = useState<'ISSUES' | 'EVENTS'>('ISSUES');
@@ -36,6 +40,8 @@ export const ValidationPanel = ({
 
     const configStatus = unconfiguredNodes > 0 ? `${unconfiguredNodes} INCOMPLETE` : 'COMPLETE';
     const configColor = unconfiguredNodes > 0 ? 'text-amber-500' : 'text-green-500';
+    const simulationLabel = simulationStatus ?? (validation?.is_valid && unconfiguredNodes === 0 ? 'READY' : 'NOT READY');
+    const simulationReady = simulationStatus === 'RUNNING' || simulationStatus === 'PAUSED' || (validation?.is_valid && unconfiguredNodes === 0);
 
     const renderIssue = (issue: ValidationIssue, idx: number) => {
         const bg = issue.level === 'ERROR' ? 'bg-red-900/10 border-red-900/40 hover:border-red-900/80' :
@@ -103,8 +109,8 @@ export const ValidationPanel = ({
                     
                     <div className="flex items-center pl-4 hidden md:flex">
                         <div className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 mr-3">Simulation</div>
-                        <div className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${validation?.is_valid && unconfiguredNodes === 0 ? 'bg-blue-900/20 border-blue-900/50 text-blue-400' : 'bg-gray-800 border-gray-700 text-gray-500'}`}>
-                            {validation?.is_valid && unconfiguredNodes === 0 ? 'READY' : 'NOT READY'}
+                        <div className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${simulationReady ? 'bg-blue-900/20 border-blue-900/50 text-blue-400' : 'bg-gray-800 border-gray-700 text-gray-500'}`}>
+                            {simulationLabel}
                         </div>
                     </div>
                 </div>

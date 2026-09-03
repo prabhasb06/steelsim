@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useEffectEvent } from 'react';
 import { 
   ReactFlow, 
   Background, 
@@ -13,7 +13,8 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import type { ValidationResult } from '../../types/topology';
+import type { PlantGraph, PortDef, ValidationResult } from '../../types/topology';
+import type { SimulationEvent, SimulationSnapshot, SimulationState } from '../../types';
 import { CustomNode } from './CustomNode';
 import { Undo2, Redo2, Save, FolderOpen, Wand2, Network, LayoutTemplate, RotateCcw, Crosshair, ZoomIn, ZoomOut, Maximize2, X, CheckSquare, Layers, Settings2, AlertTriangle, Focus } from 'lucide-react';
 import { Inspector } from './Inspector';
@@ -27,20 +28,19 @@ const nodeTypes = {
 };
 
 interface BlueprintCanvasProps {
-    setValidation: (v: ValidationResult | null) => void;
     isFocusMode: boolean;
     setIsFocusMode: (f: boolean) => void;
     activeSimId?: string | null;
-    simState?: any;
-    snapshot?: any;
-    events?: any[];
-    onGraphChange?: (graph: any) => void;
+    simState?: SimulationState | null;
+    snapshot?: SimulationSnapshot | null;
+    events?: SimulationEvent[];
+    onGraphChange?: (graph: PlantGraph) => void;
 }
 
 const BlueprintCanvas = ({ 
-    setValidation, 
     isFocusMode, 
     setIsFocusMode,
+    simState,
     snapshot,
     events = [],
     onGraphChange
@@ -51,7 +51,7 @@ const BlueprintCanvas = ({
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const { screenToFlowPosition, fitView, zoomIn, zoomOut, zoomTo, getViewport } = useReactFlow();
   
-  const [selectedNode, setSelectedNode] = useState<any>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
   const [currentValidation, setCurrentValidation] = useState<ValidationResult | null>(null);
   
@@ -67,58 +67,39 @@ const BlueprintCanvas = ({
   const [clipboard, setClipboard] = useState<{ nodes: any[], edges: any[] }>({ nodes: [], edges: [] });
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, nodeId?: string } | null>(null);
 
-  // Focus Mode Effect
-  useEffect(() => {
-    if (isFocusMode) {
+  const updateFocusMode = useCallback((focus: boolean) => {
+    if (focus) {
       setLibraryOpen(false);
       setInspectorOpen(false);
       setIssuesOpen(false);
     }
-  }, [isFocusMode]);
-
-  // Synchronize live simulation telemetry to nodes
-  useEffect(() => {
-    if (!snapshot?.node_telemetry) return;
-    setNodes(nds => nds.map(n => {
-      const telemetry = snapshot.node_telemetry[n.id];
-      if (telemetry) {
-        return {
-          ...n,
-          data: {
-            ...n.data,
-            liveTelemetry: telemetry,
-            simulationStatus: telemetry.status
-          }
-        };
-      }
-      return n;
-    }));
-  }, [snapshot?.node_telemetry, setNodes]);
+    setIsFocusMode(focus);
+  }, [setIsFocusMode]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
         if (e.key === 'Escape' && isFocusMode) {
-            setIsFocusMode(false);
+            updateFocusMode(false);
         }
         if (e.key === 'f' && e.target === document.body) {
-            setIsFocusMode(!isFocusMode);
+            updateFocusMode(!isFocusMode);
         }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFocusMode, setIsFocusMode]);
+  }, [isFocusMode, updateFocusMode]);
 
 
 
 
-  const getGraph = (n = nodes, e = edges) => ({
+  const getGraph = (n = nodes, e = edges): PlantGraph => ({
       nodes: n.map((node: any) => ({
           id: node.id,
           component_class: node.data.component_class,
           name: node.data.name,
           position: node.position,
-          ports: node.data.ports as any,
-          parameters: node.data.parameters as any,
+          ports: node.data.ports as PortDef[],
+          parameters: node.data.parameters,
           metadata: {}
       })),
       edges: e.map((edge: Edge) => ({
@@ -127,16 +108,16 @@ const BlueprintCanvas = ({
           source_port: edge.sourceHandle || "",
           target_node: edge.target,
           target_port: edge.targetHandle || "",
-          connection_type: edge.data?.connection_type || "MATERIAL"
+          connection_type: (edge.data?.connection_type || "MATERIAL") as PlantGraph['edges'][number]['connection_type']
       }))
   });
 
   // Notify parent of graph changes
   useEffect(() => {
-    if (onGraphChange && nodes.length > 0) {
+    if (onGraphChange) {
       onGraphChange(getGraph(nodes, edges));
     }
-  }, [nodes, edges]);
+  }, [nodes, edges, onGraphChange]);
 
   const saveHistory = (n: any[], e: Edge[]) => {
       const newHistory = history.slice(0, historyIndex + 1);
@@ -167,7 +148,6 @@ const BlueprintCanvas = ({
 
   const validateGraph = async (n = nodes, e = edges) => {
       if (n.length === 0) {
-          setValidation(null);
           setCurrentValidation(null);
           return;
       }
@@ -180,7 +160,6 @@ const BlueprintCanvas = ({
           });
           const v: ValidationResult = await res.json();
           setCurrentValidation(v);
-          setValidation(v);
           
           setNodes((nds) => nds.map((n) => {
               const issues = v.issues.filter(i => i.node_id === n.id);
@@ -192,6 +171,8 @@ const BlueprintCanvas = ({
           // Auto expand issues drawer if fatal error
           if (!v.is_valid && !isFocusMode) {
               setIssuesOpen(true);
+          } else if (v.is_valid) {
+              setIssuesOpen(false);
           }
       } catch(e) {
           console.error(e);
@@ -199,15 +180,15 @@ const BlueprintCanvas = ({
   };
 
   
-  const onReconnect = useCallback((oldEdge: Edge, newConnection: Connection) => {
+  const onReconnect = (oldEdge: Edge, newConnection: Connection) => {
       setEdges((els) => {
           const updated = reconnectEdge(oldEdge, newConnection, els);
           setTimeout(() => { saveHistory(nodes, updated); validateGraph(nodes, updated); }, 50);
           return updated;
       });
-  }, [nodes, historyIndex]);
+  };
 
-  const onConnect = useCallback((params: Connection) => {
+  const onConnect = (params: Connection) => {
       const sourceNode = nodes.find((n: any) => n.id === params.source);
       const targetNode = nodes.find((n: any) => n.id === params.target);
       let pTypeSource = 'MATERIAL';
@@ -249,7 +230,7 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
           setTimeout(() => { saveHistory(nodes, updated); validateGraph(nodes, updated); }, 50);
           return updated;
       });
-  }, [nodes, setEdges, historyIndex]);
+  };
 
 
 
@@ -321,8 +302,7 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
-  const onDrop = useCallback(
-    async (event: React.DragEvent) => {
+  const onDrop = async (event: React.DragEvent) => {
       event.preventDefault();
       const componentClass = event.dataTransfer.getData('application/reactflow');
       if (!componentClass) return;
@@ -354,9 +334,7 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
               return updated;
           });
       }
-    },
-    [screenToFlowPosition, setNodes, nodes, edges]
-  );
+  };
 
 
 
@@ -432,7 +410,7 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
           });
           return updatedNodes;
       });
-      setSelectedNode(null);
+      setSelectedNodeId(null);
   };
 
   const handlePaste = () => {
@@ -505,7 +483,7 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
           });
           return updatedNodes;
       });
-      if (nodeId === selectedNode) setSelectedNode(null);
+      if (nodeId === selectedNodeId) setSelectedNodeId(null);
       setSelectedEdge(null);
   };
 
@@ -532,7 +510,7 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
   };
 
   const handleShowUpstream = () => {
-      if (!selectedNode) return;
+      if (!selectedNodeId) return;
       // Very basic upstream highlight logic: select all source nodes that lead here
       const upstream = new Set<string>();
       const traverse = (nodeId: string) => {
@@ -543,14 +521,14 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
               }
           });
       };
-      traverse(selectedNode);
+      traverse(selectedNodeId);
       if (upstream.size > 0) {
-          setNodes(nds => nds.map(n => ({ ...n, selected: upstream.has(n.id) || n.id === selectedNode })));
+          setNodes(nds => nds.map(n => ({ ...n, selected: upstream.has(n.id) || n.id === selectedNodeId })));
       }
   };
 
   const handleShowDownstream = () => {
-      if (!selectedNode) return;
+      if (!selectedNodeId) return;
       const downstream = new Set<string>();
       const traverse = (nodeId: string) => {
           edges.filter(e => e.source === nodeId).forEach(e => {
@@ -560,18 +538,18 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
               }
           });
       };
-      traverse(selectedNode);
+      traverse(selectedNodeId);
       if (downstream.size > 0) {
-          setNodes(nds => nds.map(n => ({ ...n, selected: downstream.has(n.id) || n.id === selectedNode })));
+          setNodes(nds => nds.map(n => ({ ...n, selected: downstream.has(n.id) || n.id === selectedNodeId })));
       }
   };
 
   const onNodeContextMenu = (event: React.MouseEvent, node: any) => {
       event.preventDefault();
       setContextMenu({ x: event.clientX, y: event.clientY, nodeId: node.id });
-      if (selectedNode !== node.id) {
+      if (selectedNodeId !== node.id) {
           setNodes(nds => nds.map(n => ({ ...n, selected: n.id === node.id })));
-          setSelectedNode(node.id);
+          setSelectedNodeId(node.id);
       }
   };
 
@@ -581,41 +559,41 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
   };
 
   // Keyboard Shortcuts
+  const handleEditorKeyDown = useEffectEvent((e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable) {
+          return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'c') {
+          handleCopy();
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'x') {
+          handleCut();
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'v') {
+          handlePaste();
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'd') {
+          e.preventDefault();
+          handleDuplicate();
+      } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+          e.preventDefault();
+          handleUndo();
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'z') {
+          e.preventDefault();
+          handleRedo();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+          if (selectedNodeId) handleDeleteNode(selectedNodeId);
+          if (selectedEdge) handleDeleteEdge(selectedEdge);
+      } else if (e.key.toLowerCase() === 'f' && selectedNodeId) {
+          const node = nodes.find(n => n.id === selectedNodeId);
+          if (node) zoomTo(1, { duration: 500 });
+      }
+  });
+
   useEffect(() => {
-      const handleKeyDown = (e: KeyboardEvent) => {
-          const target = e.target as HTMLElement;
-          if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable) {
-              return;
-          }
-          
-          if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'c') {
-              handleCopy();
-          } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'x') {
-              handleCut();
-          } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'v') {
-              handlePaste();
-          } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'd') {
-              e.preventDefault();
-              handleDuplicate();
-          } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
-              e.preventDefault();
-              handleUndo();
-          } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'z') {
-              e.preventDefault();
-              handleRedo();
-          } else if (e.key === 'Delete' || e.key === 'Backspace') {
-              if (selectedNode) handleDeleteNode(selectedNode);
-              if (selectedEdge) handleDeleteEdge(selectedEdge);
-          } else if (e.key.toLowerCase() === 'f') {
-              if (selectedNode) {
-                  const node = nodes.find(n => n.id === selectedNode);
-                  if (node) zoomTo(1, { duration: 500 });
-              }
-          }
-      };
+      const handleKeyDown = (event: KeyboardEvent) => handleEditorKeyDown(event);
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNode, nodes, edges, clipboard, historyIndex]);
+  }, []);
 
   // ===================== END EDITOR OPERATIONS ===================== //
 
@@ -678,7 +656,7 @@ const layoutMap = new Map(layout.nodes.map((n: any) => [n.id, n.position]));
           setNodes(updatedNodes);
           saveHistory(updatedNodes, currentEdges);
           validateGraph(updatedNodes, currentEdges);
-          setTimeout(() => fitView({ padding: 0.2, minZoom: 1.0, maxZoom: 1.2, duration: 800 }), 100);
+          setTimeout(() => fitView({ padding: 0.2, minZoom: 0.25, maxZoom: 1.2, duration: 800 }), 100);
       }
   };
 
@@ -786,11 +764,12 @@ Apply Setup?`;
           }));
           setNodes(rn);
           setEdges(re);
+          setLibraryOpen(false);
           saveHistory(rn, re);
           try {
               localStorage.setItem('steelsim_plant', JSON.stringify({ nodes: tmt.nodes, edges: tmt.edges }));
-          } catch(e){}
-          setTimeout(() => fitView({ padding: 0.2, minZoom: 1.0, maxZoom: 1.2, duration: 800 }), 100);
+          } catch {}
+          setTimeout(() => fitView({ padding: 0.2, minZoom: 0.25, maxZoom: 1.2, duration: 800 }), 100);
           validateGraph(rn, re);
       }
   };
@@ -840,7 +819,7 @@ Apply Setup?`;
               setNodes(rn);
               setEdges(re);
               saveHistory(rn, re);
-              setTimeout(() => fitView({ padding: 0.2, minZoom: 1.0, maxZoom: 1.2, duration: 800 }), 100);
+              setTimeout(() => fitView({ padding: 0.2, minZoom: 0.25, maxZoom: 1.2, duration: 800 }), 100);
               validateGraph(rn, re);
           } catch(e) {
               console.error(e);
@@ -851,9 +830,25 @@ Apply Setup?`;
   // Re-fit view when panels change
   useEffect(() => {
     setTimeout(() => {
-        fitView({ padding: 0.2, minZoom: 1.0, maxZoom: 1.2, duration: 400 });
+        fitView({ padding: 0.2, minZoom: 0.25, maxZoom: 1.2, duration: 400 });
     }, 300);
-  }, [libraryOpen, inspectorOpen, issuesOpen, isFocusMode]);
+  }, [libraryOpen, inspectorOpen, issuesOpen, isFocusMode, fitView]);
+
+  const renderedNodes = nodes.map(node => {
+      const telemetry = snapshot?.node_telemetry?.[node.id];
+      if (!telemetry) return node;
+      return {
+          ...node,
+          data: { ...node.data, liveTelemetry: telemetry, simulationStatus: telemetry.status }
+      };
+  });
+
+  const selectedEquipmentBase = selectedNodeId
+      ? getGraph(nodes.filter(node => node.id === selectedNodeId), []).nodes[0]
+      : undefined;
+  const selectedEquipment = selectedEquipmentBase
+      ? { ...selectedEquipmentBase, liveTelemetry: snapshot?.node_telemetry?.[selectedEquipmentBase.id] }
+      : null;
 
   return (
     <ErrorBoundary>
@@ -914,10 +909,10 @@ Apply Setup?`;
             <button onClick={() => zoomOut()} className="p-1.5 text-gray-400 hover:text-white hover:bg-industrial-700 rounded" title="Zoom Out">
                 <ZoomOut className="w-4 h-4" />
             </button>
-            <button onClick={() => fitView({ padding: 0.2, minZoom: 1.0, maxZoom: 1.2, duration: 800 })} className="p-1.5 text-gray-400 hover:text-white hover:bg-industrial-700 rounded" title="Fit Plant">
+            <button onClick={() => fitView({ padding: 0.2, minZoom: 0.25, maxZoom: 1.2, duration: 800 })} className="p-1.5 text-gray-400 hover:text-white hover:bg-industrial-700 rounded" title="Fit Plant">
                 <Maximize2 className="w-4 h-4" />
             </button>
-            <button onClick={() => setIsFocusMode(!isFocusMode)} className={`p-1.5 rounded ml-1 ${isFocusMode ? 'bg-amber-900/40 text-amber-400' : 'text-gray-400 hover:text-white hover:bg-industrial-700'}`} title="Focus Mode (F)">
+            <button onClick={() => updateFocusMode(!isFocusMode)} className={`p-1.5 rounded ml-1 ${isFocusMode ? 'bg-amber-900/40 text-amber-400' : 'text-gray-400 hover:text-white hover:bg-industrial-700'}`} title="Focus Mode (F)">
                 <Focus className="w-4 h-4" />
             </button>
             
@@ -932,7 +927,7 @@ Apply Setup?`;
             <button onClick={handleLoad} className="p-1.5 text-gray-400 hover:text-white hover:bg-industrial-700 rounded" title="Load">
                 <FolderOpen className="w-4 h-4" />
             </button>
-            <button onClick={() => { setNodes([]); setEdges([]); setValidation(null); saveHistory([], []); }} className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded ml-1" title="Clear">
+            <button onClick={() => { setNodes([]); setEdges([]); setCurrentValidation(null); saveHistory([], []); }} className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded ml-1" title="Clear">
                 <RotateCcw className="w-4 h-4" />
             </button>
         </div>
@@ -945,25 +940,25 @@ Apply Setup?`;
         <div className="flex-1 h-full relative flex flex-col min-w-0" ref={reactFlowWrapper}>
             <div className="flex-1 relative">
                 <ReactFlow
-                    nodes={nodes}
+                    nodes={renderedNodes}
                     edges={edges}
                     onNodesChange={onNodesChange}
                     snapToGrid={true}
                     snapGrid={[15, 15]}
                     onEdgesChange={onEdgesChange}
-onNodesDelete={() => setTimeout(() => { saveHistory(nodes, edges); validateGraph(); setSelectedNode(null); }, 100)}
+onNodesDelete={() => setTimeout(() => { saveHistory(nodes, edges); validateGraph(); setSelectedNodeId(null); }, 100)}
                     onEdgesDelete={() => setTimeout(() => { saveHistory(nodes, edges); validateGraph(); setSelectedEdge(null); }, 100)}
                     onReconnect={onReconnect}
-                    onEdgeClick={(_, edge) => { setSelectedEdge(edge.id); setSelectedNode(null); }}
+                    onEdgeClick={(_, edge) => { setSelectedEdge(edge.id); setSelectedNodeId(null); }}
                     onNodeContextMenu={onNodeContextMenu}
                     onPaneContextMenu={onPaneContextMenu}
-                    onPaneClick={() => { setContextMenu(null); setSelectedNode(null); setSelectedEdge(null); }}
-                    onSelectionChange={({ nodes }) => {
-                        if (nodes.length > 0) {
-                            setSelectedNode(getGraph(nodes, []).nodes[0]);
+                    onPaneClick={() => { setContextMenu(null); setSelectedNodeId(null); setSelectedEdge(null); }}
+                    onSelectionChange={({ nodes: selectedNodes }) => {
+                        if (selectedNodes.length > 0) {
+                            setSelectedNodeId(selectedNodes[0].id);
                             setInspectorOpen(true);
                         } else {
-                            setSelectedNode(null);
+                            setSelectedNodeId(null);
                         }
                     }}
                     onConnect={onConnect}
@@ -1037,7 +1032,7 @@ onNodesDelete={() => setTimeout(() => { saveHistory(nodes, edges); validateGraph
                 {/* FOCUS MODE EXIT OVERLAY */}
                 {isFocusMode && (
                     <button 
-                        onClick={() => setIsFocusMode(false)}
+                        onClick={() => updateFocusMode(false)}
                         className="absolute top-4 right-4 bg-industrial-800/80 backdrop-blur border border-industrial-700 text-gray-300 hover:text-white px-3 py-1.5 rounded flex items-center gap-2 text-xs font-semibold tracking-wide shadow-lg z-50 transition-colors"
                     >
                         <X className="w-4 h-4" /> EXIT FOCUS
@@ -1047,6 +1042,7 @@ onNodesDelete={() => setTimeout(() => { saveHistory(nodes, edges); validateGraph
 
             <ValidationPanel 
                 validation={currentValidation} 
+                simulationStatus={snapshot?.status ?? simState?.status}
                 isOpen={issuesOpen}
                 setIsOpen={setIssuesOpen}
                 events={events}
@@ -1054,7 +1050,7 @@ onNodesDelete={() => setTimeout(() => { saveHistory(nodes, edges); validateGraph
                     setNodes(nds => nds.map(n => ({ ...n, selected: n.id === id })));
                     const node = nodes.find(n => n.id === id);
                     if (node) {
-                        setSelectedNode(node);
+                        setSelectedNodeId(node.id);
                         setInspectorOpen(true);
                         fitView({ nodes: [node], duration: 800, padding: 0.5 });
                     }
@@ -1062,7 +1058,7 @@ onNodesDelete={() => setTimeout(() => { saveHistory(nodes, edges); validateGraph
             />
         </div>
         
-        <Inspector selectedNode={selectedNode} selectedEdge={selectedEdge} edges={edges} nodes={nodes} onDeleteEdge={handleDeleteEdge} validation={currentValidation} isOpen={inspectorOpen} setIsOpen={setInspectorOpen} />
+        <Inspector selectedNode={selectedEquipment} selectedEdge={selectedEdge} edges={edges} nodes={nodes} onDeleteEdge={handleDeleteEdge} validation={currentValidation} isOpen={inspectorOpen} setIsOpen={setInspectorOpen} />
       </div>
     </div>
     </ErrorBoundary>

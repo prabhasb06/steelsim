@@ -1,5 +1,6 @@
 import type { PlantGraph } from './types/topology';
-import type { SimulationState } from './types';
+import type { SimulationCommand, SimulationSnapshot, SimulationState } from './types';
+import type { ValidationResult } from './types/topology';
 
 const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(path, init);
@@ -17,6 +18,16 @@ export const simulationApi = {
     body: JSON.stringify({ plant }),
   }),
   get: (id: string) => request<SimulationState>(`/api/simulations/${id}`),
+  snapshot: (id: string) => request<SimulationSnapshot>(`/api/simulations/${id}/snapshot`),
+  command: (id: string, command: SimulationCommand, payload: Record<string, unknown> = {}) =>
+    request<SimulationSnapshot>(`/api/simulations/${id}/command`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command, payload }),
+    }),
+  validate: (plant: PlantGraph) => request<ValidationResult>('/api/plant/validate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(plant),
+  }),
   start: (id: string) => request<SimulationState>(`/api/simulations/${id}/start`, { method: 'POST' }),
   pause: (id: string) => request<SimulationState>(`/api/simulations/${id}/pause`, { method: 'POST' }),
   resume: (id: string) => request<SimulationState>(`/api/simulations/${id}/resume`, { method: 'POST' }),

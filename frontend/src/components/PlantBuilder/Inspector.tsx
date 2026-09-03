@@ -1,8 +1,9 @@
 import type { EquipmentNode, ValidationResult, EngineeringQuantity } from '../../types/topology';
+import type { NodeTelemetry } from '../../types';
 import { Settings2, Zap, ShieldAlert, ChevronRight, Target } from 'lucide-react';
 
 interface InspectorProps {
-    selectedNode: EquipmentNode | null;
+    selectedNode: (EquipmentNode & { liveTelemetry?: NodeTelemetry }) | null;
     selectedEdge?: string | null;
     edges?: any[];
     nodes?: any[];
@@ -124,8 +125,7 @@ export const Inspector = ({ selectedNode, selectedEdge, edges, nodes, onDeleteEd
             {/* CONTENT */}
             <div className="flex-1 overflow-y-auto">
                 {(() => {
-                    const nodeAny = selectedNode as any;
-                    const liveTelemetry = nodeAny?.data?.liveTelemetry || nodeAny?.liveTelemetry;
+                    const liveTelemetry = selectedNode.liveTelemetry;
                     if (!liveTelemetry) return null;
                     return (
                         <div className="p-3 border-b border-industrial-700 bg-industrial-900/60">

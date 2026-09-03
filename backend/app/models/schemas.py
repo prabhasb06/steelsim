@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from datetime import datetime
 from pydantic import BaseModel, Field, model_validator
 from app.models.topology import PlantGraph
@@ -36,9 +36,27 @@ class SimulationConfiguration(BaseModel):
     @classmethod
     def handle_plant_alias(cls, data: Any) -> Any:
         if isinstance(data, dict):
+            data = data.copy()
             if "plant_graph" in data and "plant" not in data:
                 data["plant"] = data["plant_graph"]
+            data.pop("plant_graph", None)
         return data
+
+class NodeTelemetry(BaseModel):
+    id: str
+    status: str
+    power_kw: float = 0.0
+    power_mw: float = 0.0
+    water_m3h: float = 0.0
+    temperature_c: float = 25.0
+    throughput_tph: float = 0.0
+
+class PlantSummary(BaseModel):
+    total_power_kw: float = 0.0
+    total_power_mw: float = 0.0
+    total_water_m3h: float = 0.0
+    active_nodes: int = 0
+    total_nodes: int = 0
 
 class SimulationEvent(BaseModel):
     id: str
@@ -60,8 +78,8 @@ class SimulationSnapshot(BaseModel):
     tick: int
     seed: int
     system_health: str = "NORMAL"
-    node_telemetry: Dict[str, Any] = Field(default_factory=dict)
-    plant_summary: Dict[str, Any] = Field(default_factory=dict)
+    node_telemetry: Dict[str, NodeTelemetry] = Field(default_factory=dict)
+    plant_summary: PlantSummary = Field(default_factory=PlantSummary)
     events: list[SimulationEvent] = Field(default_factory=list)
 
     @model_validator(mode="before")
@@ -87,8 +105,8 @@ class SimulationState(BaseModel):
     status: SimulationStatus
     configuration: SimulationConfiguration
     events: list[SimulationEvent] = Field(default_factory=list)
-    node_telemetry: Dict[str, Any] = Field(default_factory=dict)
-    plant_summary: Dict[str, Any] = Field(default_factory=dict)
+    node_telemetry: Dict[str, NodeTelemetry] = Field(default_factory=dict)
+    plant_summary: PlantSummary = Field(default_factory=PlantSummary)
 
 class ChangeSpeedRequest(BaseModel):
     speed: str

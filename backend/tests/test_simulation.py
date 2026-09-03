@@ -2,7 +2,8 @@ import pytest
 import asyncio
 from fastapi.testclient import TestClient
 from main import app
-from app.models.schemas import SimulationStatus
+from app.engine.simulator import SteelSimEngine
+from app.models.schemas import EventSeverity, EventType, SimulationConfiguration, SimulationStatus
 from app.api.routes import manager
 
 client = TestClient(app)
@@ -89,6 +90,28 @@ def test_invalid_transition():
     res = client.post(f"/api/simulations/{sim_id}/pause")
     assert res.status_code == 400
 
+def test_unified_command_rejects_invalid_transition():
+    sim_id = client.post("/api/simulations", json={"seed": 42}).json()["id"]
+
+    res = client.post(
+        f"/api/simulations/{sim_id}/command",
+        json={"command": "pause", "payload": {}},
+    )
+
+    assert res.status_code == 409
+    assert "Cannot pause" in res.json()["detail"]
+
+def test_unified_command_rejects_invalid_speed():
+    sim_id = client.post("/api/simulations", json={"seed": 42}).json()["id"]
+
+    res = client.post(
+        f"/api/simulations/{sim_id}/command",
+        json={"command": "set_speed", "payload": {"speed": "warp"}},
+    )
+
+    assert res.status_code == 409
+    assert "Invalid speed" in res.json()["detail"]
+
 @pytest.mark.asyncio
 async def test_simulation_clock_advancement():
     res = client.post("/api/simulations", json={"seed": 42})
@@ -136,19 +159,49 @@ def test_reset_restores_initial():
 
 @pytest.mark.asyncio
 async def test_seeded_reproducibility():
-    # Run sim A
-    res_a = client.post("/api/simulations", json={"seed": 99})
-    id_a = res_a.json()["id"]
-    client.post(f"/api/simulations/{id_a}/speed", json={"speed": "MAX"})
-    client.post(f"/api/simulations/{id_a}/start")
-    await asyncio.sleep(0.05)
-    client.post(f"/api/simulations/{id_a}/pause")
-    tick_a = client.get(f"/api/simulations/{id_a}/snapshot").json()["tick"]
-    
-    # A single seed doesn't change outputs strictly because tick count depends on async timing in MAX mode,
-    # but let's verify RNG is independent. The prompt states "configuration + seed + actions must reproduce the same deterministic behavior."
-    # Since MAX timing relies on asyncio yields, exact tick matches across real-time runs might drift, but we verify isolation:
-    assert True
+    plant = client.get("/api/plant/template/tmt").json()
+    config = SimulationConfiguration(seed=99, plant=plant)
+    sim_a = SteelSimEngine(config)
+    sim_b = SteelSimEngine(config)
+    for sim in (sim_a, sim_b):
+        sim.status = SimulationStatus.RUNNING
+        sim.tick = 17
+        sim._calculate_telemetry()
+
+    assert sim_a.node_telemetry == sim_b.node_telemetry
+    assert sim_a.plant_summary == sim_b.plant_summary
+
+def test_tmt_telemetry_uses_catalogue_engineering_values():
+    plant = client.get("/api/plant/template/tmt").json()
+    sim_id = client.post("/api/simulations", json={"plant": plant}).json()["id"]
+    snapshot = client.post(
+        f"/api/simulations/{sim_id}/command",
+        json={"command": "start", "payload": {}},
+    ).json()
+    node_by_class = {node["component_class"]: node["id"] for node in plant["nodes"]}
+
+    furnace = snapshot["node_telemetry"][node_by_class["REHEATING_FURNACE"]]
+    tmt_cooling = snapshot["node_telemetry"][node_by_class["TMT_COOLING"]]
+    transformer = snapshot["node_telemetry"][node_by_class["TRANSFORMER"]]
+
+    assert furnace["power_kw"] > 2500
+    assert furnace["temperature_c"] > 1100
+    assert tmt_cooling["water_m3h"] > 170
+    assert transformer["throughput_tph"] == 0
+    assert snapshot["plant_summary"]["total_power_mw"] > 9
+
+def test_event_history_is_bounded():
+    sim = SteelSimEngine(SimulationConfiguration())
+    for index in range(sim.MAX_EVENTS + 25):
+        sim._add_event(
+            EventType.SIMULATION_SPEED_CHANGED,
+            EventSeverity.INFO,
+            "test",
+            f"event {index}",
+        )
+
+    assert len(sim.events) == sim.MAX_EVENTS
+    assert sim.events[0].message == "event 25"
 
 def test_multiple_simulation_isolation():
     res1 = client.post("/api/simulations", json={"seed": 1})

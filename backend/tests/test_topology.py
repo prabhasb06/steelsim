@@ -2,7 +2,7 @@ import pytest
 from app.models.topology import PlantGraph, EquipmentNode, ConnectionEdge, PortType, ComponentClass
 from app.models.component_library import create_equipment_node
 from app.engine.topology_validator import validate_topology
-from app.engine.auto_connect import propose_auto_connections
+from app.engine.auto_connect import propose_auto_connections, propose_auto_setup
 from app.engine.auto_layout import apply_auto_layout
 
 def test_empty_topology():
@@ -27,9 +27,12 @@ def test_valid_topology():
     # Test valid fully connected path
     fg = create_equipment_node(ComponentClass.FINISHED_GOODS)
     graph.nodes.append(fg)
-    edges = propose_auto_connections(graph)
-    graph.edges.extend(edges)
-    res2 = validate_topology(graph)
+    graph.nodes.extend([
+        create_equipment_node(ComponentClass.TRANSFORMER),
+        create_equipment_node(ComponentClass.ELECTRICAL_SUPPLY),
+    ])
+    proposal = propose_auto_setup(graph)
+    res2 = validate_topology(proposal.proposed_graph)
     assert res2.is_valid
     
 def test_auto_connect():
@@ -95,3 +98,18 @@ def test_missing_utility():
     res = validate_topology(graph)
     assert not res.is_valid
     assert any(i.issue_code == 'UTILITY_REQUIRED' and i.level == 'ERROR' for i in res.issues)
+
+def test_missing_electrical_utility():
+    graph = PlantGraph()
+    furnace = create_equipment_node(ComponentClass.REHEATING_FURNACE)
+    finished_goods = create_equipment_node(ComponentClass.FINISHED_GOODS)
+    graph.nodes.extend([furnace, finished_goods])
+    graph.edges.extend(propose_auto_connections(graph))
+
+    res = validate_topology(graph)
+
+    assert not res.is_valid
+    assert any(
+        issue.issue_code == 'UTILITY_REQUIRED' and 'electrical' in issue.message
+        for issue in res.issues
+    )
