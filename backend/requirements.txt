@@ -1,6 +1,6 @@
-fastapi>=0.100.0
-uvicorn>=0.23.0
-pydantic>=2.0.0
-pytest>=7.0.0
-pytest-asyncio>=0.21.0
-httpx>=0.24.0
+fastapi>=0.141,<0.142
+uvicorn>=0.52,<0.53
+pydantic>=2.13,<3
+pytest>=9.1,<10
+pytest-asyncio>=1.4,<2
+httpx2>=2.12,<3

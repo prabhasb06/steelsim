@@ -22,6 +22,7 @@ import { ValidationPanel } from './ValidationPanel';
 import { ContextMenu } from './ContextMenu';
 import { ComponentLibrary } from './ComponentLibrary';
 import { ErrorBoundary } from './ErrorBoundary';
+import { apiRequest } from '../../api';
 
 const nodeTypes = {
   equipment: CustomNode,
@@ -64,6 +65,13 @@ const BlueprintCanvas = ({
   const [libraryOpen, setLibraryOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [issuesOpen, setIssuesOpen] = useState(true);
+  const [notice, setNotice] = useState<{ message: string; error?: boolean } | null>(null);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   // History for Undo/Redo
   const [history, setHistory] = useState<{nodes: any[], edges: Edge[]}[]>([]);
@@ -159,12 +167,11 @@ const BlueprintCanvas = ({
       }
       const graph = getGraph(n, e);
       try {
-          const res = await fetch('/api/plant/validate', {
+          const v = await apiRequest<ValidationResult>('/api/plant/validate', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(graph)
           });
-          const v: ValidationResult = await res.json();
           setCurrentValidation(v);
           onValidationChange?.(v);
           
@@ -183,6 +190,7 @@ const BlueprintCanvas = ({
           }
       } catch(e) {
           console.error(e);
+          setNotice({ message: 'Unable to validate the plant. Check that the backend is online.', error: true });
       }
   };
 
@@ -211,9 +219,7 @@ const BlueprintCanvas = ({
       }
       
       if (pTypeSource !== pTypeTarget) {
-          alert(`CONNECTION REJECTED
-
-Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
+          setNotice({ message: `Connection rejected: cannot connect ${pTypeSource} out to ${pTypeTarget} in.`, error: true });
           return;
       }
       
@@ -267,9 +273,8 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
   };
 
   const addComponentToCanvas = async (c_class: string, position: { x: number, y: number }) => {
-      const res = await fetch(`/api/plant/components/${c_class}`);
-      if (res.ok) {
-          const nodeData = await res.json();
+      try {
+          const nodeData = await apiRequest<any>(`/api/plant/components/${c_class}`);
           const newNode = {
             id: nodeData.id,
             type: 'equipment',
@@ -292,6 +297,8 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
               setTimeout(() => { saveHistory(updated, edges); validateGraph(updated, edges); }, 50);
               return updated;
           });
+      } catch (error) {
+          setNotice({ message: error instanceof Error ? error.message : 'Unable to add the component.', error: true });
       }
   };
 
@@ -321,9 +328,8 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
 
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
       
-      const res = await fetch(`/api/plant/components/${componentClass}`);
-      if (res.ok) {
-          const nodeData = await res.json();
+      try {
+          const nodeData = await apiRequest<any>(`/api/plant/components/${componentClass}`);
           const newNode = {
             id: nodeData.id,
             type: 'equipment',
@@ -346,6 +352,8 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
               setTimeout(() => { saveHistory(updated, edges); validateGraph(updated, edges); }, 50);
               return updated;
           });
+      } catch (error) {
+          setNotice({ message: error instanceof Error ? error.message : 'Unable to add the dropped component.', error: true });
       }
   };
 
@@ -612,14 +620,13 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
   // ===================== END EDITOR OPERATIONS ===================== //
 
   const handleAutoConnect = async () => {
-      const graph = getGraph();
-      const res = await fetch('/api/plant/auto-connect', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(graph)
-      });
-      if (res.ok) {
-          const suggested = await res.json();
+      try {
+          const graph = getGraph();
+          const suggested = await apiRequest<any[]>('/api/plant/auto-connect', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(graph)
+          });
           const colorMap: Record<string, string> = {
             'MATERIAL': '#3b82f6',
             'ELECTRICAL': '#eab308',
@@ -648,21 +655,22 @@ Cannot connect ${pTypeSource} out to ${pTypeTarget} in.`);
               saveHistory(nodes, newEdges);
               validateGraph(nodes, newEdges);
           } else {
-              alert("No new automated connections found.");
+              setNotice({ message: 'No new automated connections were found.' });
           }
+      } catch (error) {
+          setNotice({ message: error instanceof Error ? error.message : 'Auto Connect failed.', error: true });
       }
   };
 
   const handleAutoLayout = async (currentNodes: any[], currentEdges: any[] = edges) => {
-      const graph = getGraph(currentNodes, currentEdges);
-      const res = await fetch('/api/plant/auto-layout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(graph)
-      });
-      if (res.ok) {
-          const layout = await res.json();
-const layoutMap = new Map(layout.nodes.map((n: any) => [n.id, n.position]));
+      try {
+          const graph = getGraph(currentNodes, currentEdges);
+          const layout = await apiRequest<any>('/api/plant/auto-layout', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(graph)
+          });
+          const layoutMap = new Map(layout.nodes.map((n: any) => [n.id, n.position]));
           const updatedNodes = currentNodes.map(n => ({
               ...n,
               position: n.data?.locked ? n.position : (layoutMap.get(n.id) || n.position)
@@ -671,23 +679,23 @@ const layoutMap = new Map(layout.nodes.map((n: any) => [n.id, n.position]));
           saveHistory(updatedNodes, currentEdges);
           validateGraph(updatedNodes, currentEdges);
           setTimeout(() => fitView({ padding: 0.2, minZoom: 0.25, maxZoom: 1.2, duration: 800 }), 100);
+      } catch (error) {
+          setNotice({ message: error instanceof Error ? error.message : 'Auto Layout failed.', error: true });
       }
   };
 
   const handleAutoSetup = async () => {
       if (nodes.length === 0) {
-          alert("AUTO SETUP\n\nNo equipment has been added to the plant.\nAdd equipment manually or load a template first.");
+          setNotice({ message: 'Auto Setup needs equipment. Add components or load the demo first.', error: true });
           return;
       }
       
-      const res = await fetch('/api/plant/auto-setup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(getGraph())
-      });
-      
-      if (res.ok) {
-          const proposal = await res.json();
+      try {
+          const proposal = await apiRequest<any>('/api/plant/auto-setup', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(getGraph())
+          });
           const newEdges = [...edges];
           let added = 0;
           
@@ -709,7 +717,7 @@ const layoutMap = new Map(layout.nodes.map((n: any) => [n.id, n.position]));
           });
           
           if (added === 0 && proposal.missing_utilities.length === 0) {
-             alert("AUTO SETUP\n\nPlant already satisfies recommended baseline topology.\nNo new connections needed.");
+             setNotice({ message: 'Plant already satisfies the recommended baseline topology.' });
              return;
           }
           
@@ -737,13 +745,14 @@ Apply Setup?`;
               setEdges(newEdges);
               await handleAutoLayout(nodes, newEdges);
           }
+      } catch (error) {
+          setNotice({ message: error instanceof Error ? error.message : 'Auto Setup failed.', error: true });
       }
   };
 
   const handleLoadTemplate = async () => {
-      const res = await fetch('/api/plant/template/tmt');
-      if (res.ok) {
-          const tmt = await res.json();
+      try {
+          const tmt = await apiRequest<any>('/api/plant/template/tmt');
           
           const rn = tmt.nodes.map((n: any, idx: number) => {
               return {
@@ -786,19 +795,25 @@ Apply Setup?`;
           } catch {}
           setTimeout(() => fitView({ padding: 0.2, minZoom: 0.25, maxZoom: 1.2, duration: 800 }), 100);
           validateGraph(rn, re);
+      } catch (error) {
+          setNotice({ message: error instanceof Error ? error.message : 'Unable to load the demo plant.', error: true });
       }
   };
 
   const handleSave = () => {
-      const plant = getGraph();
-      localStorage.setItem('steelsim_plant', JSON.stringify(plant));
-      alert("Plant topology saved locally.");
+      try {
+          const plant = getGraph();
+          localStorage.setItem('steelsim_plant', JSON.stringify(plant));
+          setNotice({ message: 'Plant topology saved in this browser.' });
+      } catch {
+          setNotice({ message: 'Unable to save the plant in browser storage.', error: true });
+      }
   };
 
   const handleLoad = () => {
-      const data = localStorage.getItem('steelsim_plant');
-      if (data) {
-          try {
+      try {
+          const data = localStorage.getItem('steelsim_plant');
+          if (data) {
               const plant = JSON.parse(data);
               
               const rn = plant.nodes.map((n: any) => ({
@@ -837,18 +852,23 @@ Apply Setup?`;
               saveHistory(rn, re);
               setTimeout(() => fitView({ padding: 0.2, minZoom: 0.25, maxZoom: 1.2, duration: 800 }), 100);
               validateGraph(rn, re);
-          } catch(e) {
-              console.error(e);
+          } else {
+              setNotice({ message: 'No saved plant was found in this browser.', error: true });
           }
+      } catch(e) {
+          console.error(e);
+          setNotice({ message: 'The saved plant could not be loaded because its data is unavailable or invalid.', error: true });
       }
   };
 
   // Re-fit view when panels change
   useEffect(() => {
-    setTimeout(() => {
+    if (!isActive) return;
+    const timer = window.setTimeout(() => {
         fitView({ padding: 0.2, minZoom: 0.25, maxZoom: 1.2, duration: 400 });
     }, 300);
-  }, [libraryOpen, inspectorOpen, issuesOpen, isFocusMode, fitView]);
+    return () => window.clearTimeout(timer);
+  }, [libraryOpen, inspectorOpen, issuesOpen, isFocusMode, isActive, fitView]);
 
   const renderedNodes = nodes.map(node => {
       const telemetry = snapshot?.node_telemetry?.[node.id];
@@ -868,7 +888,12 @@ Apply Setup?`;
 
   return (
     <ErrorBoundary>
-    <div className={`flex-1 h-full flex flex-col bg-[#121315] ${isFocusMode ? 'fixed inset-0 z-50' : ''}`} ref={containerRef}>
+    <div className={`relative flex-1 h-full flex flex-col bg-[#121315] ${isFocusMode ? 'fixed inset-0 z-50' : ''}`} ref={containerRef}>
+      {notice && (
+        <div role={notice.error ? 'alert' : 'status'} className={`absolute right-4 top-14 z-50 max-w-sm rounded border px-4 py-2 text-xs shadow-xl ${notice.error ? 'border-red-700 bg-red-950 text-red-100' : 'border-blue-700 bg-blue-950 text-blue-100'}`}>
+          {notice.message}
+        </div>
+      )}
       
       {/* UNIFIED TOOLBAR */}
       <div className="h-12 border-b border-industrial-700 bg-industrial-800 flex items-center justify-between px-2 flex-shrink-0">

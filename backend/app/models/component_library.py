@@ -65,7 +65,7 @@ COMPONENT_TEMPLATES = {
             create_port("mat_out", PortType.MATERIAL, PortDirection.OUT),
             create_port("pwr_in", PortType.ELECTRICAL, PortDirection.IN),
         ],
-        "params": {"inventory": q_mass(1000), "dispatch": q_throughput(30), "power": q_power(0.015)}
+        "params": {"inventory": q_mass(1000), "dispatch": q_throughput(25), "power": q_power(0.015)}
     },
     ComponentClass.INDUCTION_FURNACE: {
         "name": "Medium Frequency Induction Furnace",

@@ -7,13 +7,14 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "test": "node --test tests/simulation-utils.test.ts",
+    "test:e2e": "node tests/e2e.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@xyflow/react": "^12.11.5",
     "lucide-react": "^1.38.0",
-    "puppeteer": "^25.9.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3",
@@ -26,6 +27,7 @@
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^6.1.0",
     "oxlint": "^1.79.0",
+    "puppeteer": "^25.10.0",
     "typescript": "~6.0.2",
     "vite": "^8.2.2"
   }

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Layers, ChevronLeft, Search } from 'lucide-react';
+import { apiRequest } from '../../api';
 
 interface ComponentLibraryProps {
     onAddClick?: (c_class: string) => void;
@@ -10,11 +11,12 @@ interface ComponentLibraryProps {
 export const ComponentLibrary = ({ isOpen, setIsOpen, onAddClick }: ComponentLibraryProps) => {
     const [templates, setTemplates] = useState<Record<string, any>>({});
     const [search, setSearch] = useState('');
+    const [loadError, setLoadError] = useState<string | null>(null);
 
     useEffect(() => {
-        fetch('/api/plant/templates')
-            .then(res => res.json())
-            .then(data => setTemplates(data));
+        apiRequest<Record<string, any>>('/api/plant/templates')
+            .then(data => setTemplates(data))
+            .catch(error => setLoadError(error instanceof Error ? error.message : 'Unable to load components.'));
     }, []);
 
     const onDragStart = (event: React.DragEvent, c_class: string) => {
@@ -63,6 +65,7 @@ export const ComponentLibrary = ({ isOpen, setIsOpen, onAddClick }: ComponentLib
             </div>
 
             <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+                {loadError && <div role="alert" className="rounded border border-red-800 bg-red-950/50 p-2 text-xs text-red-200">{loadError}</div>}
                 {filtered.map(([c_class, tpl]) => {
                     const matPorts = tpl.ports.filter((p:any) => p.type === 'MATERIAL').length;
                     const elecPorts = tpl.ports.filter((p:any) => p.type === 'ELECTRICAL').length;

@@ -11,6 +11,7 @@ from app.models.schemas import (
 
 class SteelSimEngine:
     MAX_EVENTS = 500
+    MAX_TICKS_PER_SECOND = 240.0
 
     def __init__(self, config: SimulationConfiguration):
         self.id = f"sim_{uuid.uuid4().hex[:8]}"
@@ -88,11 +89,6 @@ class SteelSimEngine:
         }
 
         telemetry = {}
-        total_power = 0.0
-        total_water = 0.0
-        active_count = 0
-        interlocked_count = 0
-
         nodes = self.config.plant.nodes if self.config.plant else []
         electrical_consumers = {
             edge.target_node for edge in self.config.plant.edges
@@ -103,10 +99,12 @@ class SteelSimEngine:
             if edge.connection_type.value == "WATER"
         } if self.config.plant else set()
         material_sources: dict[str, list[str]] = {}
+        material_targets: dict[str, list[str]] = {}
         if self.config.plant:
             for edge in self.config.plant.edges:
                 if edge.connection_type.value == "MATERIAL":
                     material_sources.setdefault(edge.target_node, []).append(edge.source_node)
+                    material_targets.setdefault(edge.source_node, []).append(edge.target_node)
 
         for n in nodes:
             c_class = n.component_class.value
@@ -163,14 +161,23 @@ class SteelSimEngine:
                 "rated_throughput_tph": rated_throughput,
             }
 
-            total_power += pwr
-            total_water += wat
-            if operating:
-                active_count += 1
-            elif status_str == "INTERLOCKED":
-                interlocked_count += 1
+        # Material flow is evaluated in topological order so every downstream
+        # rate is bounded by both its own capacity and actual upstream output.
+        node_map = {node.id: node for node in nodes}
+        in_degree = {node.id: len(material_sources.get(node.id, [])) for node in nodes}
+        queue = [node.id for node in nodes if in_degree[node.id] == 0]
+        flow_order: list[str] = []
+        while queue:
+            node_id = queue.pop(0)
+            flow_order.append(node_id)
+            for target_id in material_targets.get(node_id, []):
+                in_degree[target_id] -= 1
+                if in_degree[target_id] == 0:
+                    queue.append(target_id)
+        flow_order.extend(node.id for node in nodes if node.id not in flow_order)
 
-        for n in nodes:
+        for node_id in flow_order:
+            n = node_map[node_id]
             node_telemetry = telemetry[n.id]
             if node_telemetry["status"] != "RUNNING":
                 continue
@@ -178,19 +185,45 @@ class SteelSimEngine:
                 port.type.value == "MATERIAL" and port.direction.value == "IN"
                 for port in n.ports
             )
-            upstream_ready = not has_material_input or any(
-                telemetry.get(source_id, {}).get("status") == "RUNNING"
-                for source_id in material_sources.get(n.id, [])
-            )
-            if upstream_ready:
-                node_telemetry["throughput_tph"] = round(
-                    node_telemetry.pop("rated_throughput_tph") * load_factor, 1
+            rated_rate = node_telemetry["rated_throughput_tph"] * load_factor
+            if not has_material_input:
+                node_telemetry["throughput_tph"] = round(rated_rate, 1)
+                continue
+
+            available_upstream = 0.0
+            for source_id in material_sources.get(n.id, []):
+                source_rate = telemetry.get(source_id, {}).get("throughput_tph", 0.0)
+                sibling_ids = material_targets.get(source_id, [])
+                sibling_demand = sum(
+                    telemetry.get(target_id, {}).get("rated_throughput_tph", 0.0) * load_factor
+                    for target_id in sibling_ids
                 )
+                if sibling_demand > 0 and rated_rate > 0:
+                    available_upstream += source_rate * (rated_rate / sibling_demand)
+                elif sibling_ids:
+                    available_upstream += source_rate / len(sibling_ids)
+
+            capacity = rated_rate if rated_rate > 0 else available_upstream
+            actual_rate = min(capacity, available_upstream)
+            if actual_rate > 0:
+                node_telemetry["throughput_tph"] = round(actual_rate, 1)
             else:
-                node_telemetry.pop("rated_throughput_tph")
+                node_telemetry.update({
+                    "status": "INTERLOCKED",
+                    "power_kw": 0.0,
+                    "power_mw": 0.0,
+                    "water_m3h": 0.0,
+                    "temperature_c": 25.0,
+                })
 
         for node_telemetry in telemetry.values():
             node_telemetry.pop("rated_throughput_tph", None)
+
+        operating_nodes = [item for item in telemetry.values() if item["status"] == "RUNNING"]
+        total_power = sum(item["power_kw"] for item in operating_nodes)
+        total_water = sum(item["water_m3h"] for item in operating_nodes)
+        active_count = len(operating_nodes)
+        interlocked_count = sum(1 for item in telemetry.values() if item["status"] == "INTERLOCKED")
 
         self.node_telemetry = telemetry
         self.plant_summary = {
@@ -273,7 +306,7 @@ class SteelSimEngine:
             tick=self.tick,
             state_version=self.state_version,
             seed=self.seed,
-            system_health="NORMAL",
+            system_health="DEGRADED" if self.plant_summary["interlocked_nodes"] else "NORMAL",
             node_telemetry=self.node_telemetry,
             plant_summary=self.plant_summary,
             events=self.events[-50:]  # Last 50 events for quick access
@@ -337,17 +370,15 @@ class SteelSimEngine:
             "1x": 1.0,
             "5x": 5.0,
             "10x": 10.0,
-            "60x": 60.0
+            "60x": 60.0,
+            "MAX": self.MAX_TICKS_PER_SECOND,
         }
         
         try:
             while self.status == SimulationStatus.RUNNING:
                 # Calculate sleep time based on speed
-                if self.speed == "MAX":
-                    sleep_time = 0.0
-                else:
-                    mult = speed_map.get(self.speed, 1.0)
-                    sleep_time = 1.0 / mult
+                mult = speed_map.get(self.speed, 1.0)
+                sleep_time = 1.0 / mult
                 
                 # Advance simulation by 1 step
                 self.tick += 1
@@ -357,12 +388,7 @@ class SteelSimEngine:
                 self._state_changed()
                 
                 # Sleep to match real-time
-                if sleep_time > 0:
-                    await asyncio.sleep(sleep_time)
-                else:
-                    # MAX mode is unthrottled but still yields on every tick so
-                    # control and snapshot requests remain responsive.
-                    await asyncio.sleep(0)
+                await asyncio.sleep(sleep_time)
                         
         except asyncio.CancelledError:
             pass

@@ -1,6 +1,6 @@
 import pytest
 from app.models.topology import PlantGraph, EquipmentNode, ConnectionEdge, PortType, ComponentClass
-from app.models.component_library import create_equipment_node
+from app.models.component_library import create_equipment_node, TMT_BASELINE_SEQUENCE
 from app.engine.topology_validator import validate_topology
 from app.engine.auto_connect import propose_auto_connections, propose_auto_setup
 from app.engine.auto_layout import apply_auto_layout
@@ -112,4 +112,38 @@ def test_missing_electrical_utility():
     assert any(
         issue.issue_code == 'UTILITY_REQUIRED' and 'electrical' in issue.message
         for issue in res.issues
+    )
+
+def build_tmt_baseline():
+    graph = PlantGraph(nodes=[create_equipment_node(component) for component in TMT_BASELINE_SEQUENCE])
+    graph.nodes.extend([
+        create_equipment_node(ComponentClass.UTILITY_SUBSTATION),
+        create_equipment_node(ComponentClass.WATER_COOLING_SYSTEM),
+    ])
+    return propose_auto_setup(graph).proposed_graph
+
+def test_aggregate_electrical_capacity_blocks_unsafe_topology():
+    graph = build_tmt_baseline()
+    substation = next(node for node in graph.nodes if node.component_class == ComponentClass.UTILITY_SUBSTATION)
+    substation.parameters['available_power'].value = 10
+
+    result = validate_topology(graph)
+
+    assert not result.is_valid
+    assert any(
+        issue.issue_code == 'UTILITY_CAPACITY_INSUFFICIENT' and 'electrical' in issue.message
+        for issue in result.issues
+    )
+
+def test_aggregate_water_capacity_blocks_unsafe_topology():
+    graph = build_tmt_baseline()
+    water_system = next(node for node in graph.nodes if node.component_class == ComponentClass.WATER_COOLING_SYSTEM)
+    water_system.parameters['available_flow'].value = 300
+
+    result = validate_topology(graph)
+
+    assert not result.is_valid
+    assert any(
+        issue.issue_code == 'UTILITY_CAPACITY_INSUFFICIENT' and 'cooling-water' in issue.message
+        for issue in result.issues
     )

@@ -1,10 +1,12 @@
 import pytest
 import asyncio
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 from main import app
 from app.engine.simulator import SteelSimEngine
 from app.models.schemas import EventSeverity, EventType, SimulationConfiguration, SimulationStatus
 from app.api.routes import manager
+from app.manager.simulation_manager import SimulationManager
 
 client = TestClient(app)
 
@@ -35,6 +37,31 @@ def test_create_accepts_legacy_plant_graph_payload():
     assert res.status_code == 200
     assert res.json()["configuration"]["plant"]["nodes"] == []
 
+def test_optional_api_key_protects_http_and_websocket(monkeypatch):
+    monkeypatch.setenv("STEELSIM_API_KEY", "investor-demo-secret")
+    secured_client = TestClient(app)
+
+    assert secured_client.get("/api/health").status_code == 200
+    assert secured_client.get("/api/simulations").status_code == 401
+    created = secured_client.post(
+        "/api/simulations",
+        json={"seed": 42},
+        headers={"X-SteelSim-API-Key": "investor-demo-secret"},
+    )
+    assert created.status_code == 200
+
+    sim_id = created.json()["id"]
+    with pytest.raises(WebSocketDisconnect) as rejected:
+        with secured_client.websocket_connect(f"/api/simulations/{sim_id}/stream"):
+            pass
+    assert rejected.value.code == 4401
+
+    with secured_client.websocket_connect(
+        f"/api/simulations/{sim_id}/stream",
+        subprotocols=["steelsim", "steelsim-key.aW52ZXN0b3ItZGVtby1zZWNyZXQ"],
+    ) as websocket:
+        assert websocket.receive_json()["simulation_id"] == sim_id
+
 def test_ready_to_running():
     res = client.post("/api/simulations", json={"seed": 42})
     sim_id = res.json()["id"]
@@ -61,6 +88,18 @@ def test_paused_to_running():
     res = client.post(f"/api/simulations/{sim_id}/resume")
     assert res.status_code == 200
     assert res.json()["status"] == "RUNNING"
+
+def test_resume_endpoint_cannot_bypass_topology_gate():
+    furnace = client.get("/api/plant/components/INDUCTION_FURNACE").json()
+    sim_id = client.post(
+        "/api/simulations",
+        json={"plant": {"nodes": [furnace], "edges": []}},
+    ).json()["id"]
+
+    response = client.post(f"/api/simulations/{sim_id}/resume")
+
+    assert response.status_code == 400
+    assert "Cannot resume" in response.json()["detail"]
 
 def test_reset():
     res = client.post("/api/simulations", json={"seed": 42})
@@ -101,6 +140,17 @@ def test_unified_command_rejects_invalid_transition():
     assert res.status_code == 409
     assert "Cannot pause" in res.json()["detail"]
 
+def test_unified_resume_requires_paused_state():
+    sim_id = client.post("/api/simulations", json={"seed": 42}).json()["id"]
+
+    response = client.post(
+        f"/api/simulations/{sim_id}/command",
+        json={"command": "resume", "payload": {}},
+    )
+
+    assert response.status_code == 409
+    assert "Cannot resume" in response.json()["detail"]
+
 def test_unified_command_rejects_invalid_speed():
     sim_id = client.post("/api/simulations", json={"seed": 42}).json()["id"]
 
@@ -127,6 +177,7 @@ async def test_simulation_clock_advancement():
     res = client.get(f"/api/simulations/{sim_id}/snapshot")
     assert res.json()["tick"] > 0
     assert res.json()["elapsed_seconds"] > 0
+    assert res.json()["tick"] < 100
 
 @pytest.mark.asyncio
 async def test_pause_prevents_advancement():
@@ -216,6 +267,25 @@ def test_multiple_simulation_isolation():
     assert client.get(f"/api/simulations/{id1}").json()["status"] == "RUNNING"
     assert client.get(f"/api/simulations/{id2}").json()["status"] == "READY"
 
+def test_delete_simulation_releases_manager_entry():
+    sim_id = client.post("/api/simulations", json={"seed": 42}).json()["id"]
+
+    deleted = client.delete(f"/api/simulations/{sim_id}")
+
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted"] is True
+    assert client.get(f"/api/simulations/{sim_id}").status_code == 404
+
+def test_manager_evicts_oldest_inactive_simulation_at_capacity():
+    small_manager = SimulationManager(max_simulations=2)
+    first = small_manager.create_simulation(SimulationConfiguration(seed=1))
+    second = small_manager.create_simulation(SimulationConfiguration(seed=2))
+    third = small_manager.create_simulation(SimulationConfiguration(seed=3))
+
+    assert small_manager.get_simulation(first.id) is None
+    assert small_manager.get_simulation(second.id) is not None
+    assert small_manager.get_simulation(third.id) is not None
+
 def test_event_generation():
     res = client.post("/api/simulations", json={"seed": 42})
     sim_id = res.json()["id"]
@@ -259,7 +329,29 @@ def test_investor_baseline_contains_melt_shop_and_utilities():
         "UTILITY_SUBSTATION",
         "WATER_COOLING_SYSTEM",
     }.issubset(classes)
-    assert client.post("/api/plant/validate", json=plant).json()["is_valid"]
+    validation = client.post("/api/plant/validate", json=plant).json()
+    assert validation["is_valid"]
+    assert validation["issues"] == []
+
+def test_material_flow_is_bounded_by_upstream_output():
+    plant = client.get("/api/plant/template/tmt").json()
+    for node in plant["nodes"]:
+        if node["component_class"] == "RAW_MATERIAL_STORAGE":
+            node["parameters"]["dispatch"]["value"] = 20
+
+    sim_id = client.post("/api/simulations", json={"plant": plant}).json()["id"]
+    snapshot = client.post(
+        f"/api/simulations/{sim_id}/command",
+        json={"command": "start", "payload": {}},
+    ).json()
+    material_rates = [
+        snapshot["node_telemetry"][node["id"]]["throughput_tph"]
+        for node in plant["nodes"]
+        if node["component_class"] not in {"UTILITY_SUBSTATION", "WATER_COOLING_SYSTEM"}
+    ]
+
+    assert material_rates[0] > 0
+    assert all(rate <= material_rates[0] for rate in material_rates[1:])
 
 def test_backend_blocks_invalid_non_empty_topology():
     furnace = client.get("/api/plant/components/INDUCTION_FURNACE").json()

@@ -183,16 +183,72 @@ def validate_topology(graph: PlantGraph) -> ValidationResult:
                             engineering_reason=f"Potential configured restriction of {round(diff, 2)} {tgt_tp.unit} (>{round(diff/src_tp.value*100, 1)}% deficit).",
                             blocks_simulation=False))
                         
-        if edge.connection_type == PortType.WATER:
-            src = node_map.get(edge.source_node)
-            tgt = node_map.get(edge.target_node)
-            if src and tgt:
-                src_flow = src.parameters.get("available_flow") or src.parameters.get("flow")
-                tgt_flow = tgt.parameters.get("water_flow")
-                if src_flow and tgt_flow and src_flow.value < tgt_flow.value:
-                    issues.append(ValidationIssue(level="WARNING", issue_code="UTILITY_CAPACITY_INSUFFICIENT", node_id=tgt.id,
-                        message=f"{tgt.name} requires {tgt_flow.value} {tgt_flow.unit} but supply provides {src_flow.value} {src_flow.unit}.",
-                        engineering_reason="Utility deficit detected.", blocks_simulation=False))
+    # Validate connected utility networks against aggregate demand. Checking
+    # consumers one-by-one misses a common failure where every branch is below
+    # source capacity but their combined load is not.
+    electrical_demands = {
+        node.id: node.parameters["power"].value
+        for node in graph.nodes
+        if node.id in electrical_consumers and "power" in node.parameters
+    }
+    electrical_source_ids = {
+        edge.source_node
+        for edge in graph.edges
+        if edge.connection_type == PortType.ELECTRICAL and edge.target_node in electrical_demands
+    }
+    electrical_capacity = 0.0
+    for source_id in electrical_source_ids:
+        source = node_map[source_id]
+        capacity = source.parameters.get("available_power") or source.parameters.get("rating")
+        if capacity:
+            electrical_capacity += capacity.value / 1000.0 if capacity.unit.lower() == "kw" else capacity.value
+        else:
+            issues.append(ValidationIssue(
+                level="ERROR", issue_code="UTILITY_SOURCE_INVALID", node_id=source.id,
+                message=f"{source.name} supplies electrical loads but has no declared capacity.",
+                engineering_reason="A utility connection must originate from a rated source.",
+                blocks_simulation=True))
+
+    total_electrical_demand = sum(electrical_demands.values())
+    if electrical_demands and electrical_capacity < total_electrical_demand:
+        issues.append(ValidationIssue(
+            level="ERROR", issue_code="UTILITY_CAPACITY_INSUFFICIENT",
+            message=f"Connected electrical demand is {total_electrical_demand:.3f} MW but rated supply is {electrical_capacity:.3f} MW.",
+            engineering_reason="Aggregate connected load exceeds available substation or transformer capacity.",
+            suggested_resolution="Increase electrical supply capacity or reduce connected equipment load.",
+            blocks_simulation=True))
+
+    water_demands = {
+        node.id: node.parameters["water_flow"].value
+        for node in graph.nodes
+        if node.id in water_consumers and "water_flow" in node.parameters
+    }
+    water_source_ids = {
+        edge.source_node
+        for edge in graph.edges
+        if edge.connection_type == PortType.WATER and edge.target_node in water_demands
+    }
+    water_capacity = 0.0
+    for source_id in water_source_ids:
+        source = node_map[source_id]
+        capacity = source.parameters.get("available_flow") or source.parameters.get("flow")
+        if capacity:
+            water_capacity += capacity.value
+        else:
+            issues.append(ValidationIssue(
+                level="ERROR", issue_code="UTILITY_SOURCE_INVALID", node_id=source.id,
+                message=f"{source.name} supplies cooling-water loads but has no declared capacity.",
+                engineering_reason="A utility connection must originate from a rated source.",
+                blocks_simulation=True))
+
+    total_water_demand = sum(water_demands.values())
+    if water_demands and water_capacity < total_water_demand:
+        issues.append(ValidationIssue(
+            level="ERROR", issue_code="UTILITY_CAPACITY_INSUFFICIENT",
+            message=f"Connected cooling-water demand is {total_water_demand:.1f} m³/h but rated supply is {water_capacity:.1f} m³/h.",
+            engineering_reason="Aggregate connected flow exceeds available cooling-system capacity.",
+            suggested_resolution="Increase cooling-water capacity or reduce connected flow demand.",
+            blocks_simulation=True))
 
     is_valid = not any(i.blocks_simulation for i in issues)
     return ValidationResult(is_valid=is_valid, issues=issues)

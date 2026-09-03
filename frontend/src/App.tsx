@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { LayoutDashboard, Factory, Activity, Truck, Wrench, Shield, Zap, Cpu, Play, Pause, RotateCcw, ArrowRight, CheckCircle2, AlertTriangle, Clock3 } from 'lucide-react';
 import { Blueprint } from './components/PlantBuilder/Blueprint';
 import { simulationApi } from './api';
 import type { SimulationCommand, SimulationEvent, SimulationSnapshot, SimulationState } from './types';
 import type { PlantGraph, ValidationResult } from './types/topology';
+import { isUtilityClass, orderProcessNodes, parseSimulationSnapshot, plantSimulationSignature, shouldAcceptSnapshot } from './simulation-utils';
 
 type ViewMode = 'OVERVIEW' | 'BUILDER' | 'SIMULATION' | 'OPTIMIZATION';
 type StreamStatus = 'IDLE' | 'CONNECTING' | 'LIVE' | 'RECONNECTING';
@@ -23,6 +24,15 @@ function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const simulatedGraphRef = useRef<string | null>(null);
+  const latestSnapshotRef = useRef<SimulationSnapshot | null>(null);
+
+  const applySnapshot = useCallback((next: SimulationSnapshot) => {
+    if (!shouldAcceptSnapshot(latestSnapshotRef.current, next)) return;
+    latestSnapshotRef.current = next;
+    setSnapshot(next);
+    setEvents(next.events);
+    setBackendConnected(true);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -55,9 +65,7 @@ function App() {
       try {
         const data = await simulationApi.snapshot(activeSimId);
         if (mounted) {
-          setSnapshot(data);
-          setEvents(data.events);
-          setBackendConnected(true);
+          applySnapshot(data);
         }
       } catch (error) {
         if (mounted) {
@@ -70,17 +78,22 @@ function App() {
     const connect = () => {
       if (!mounted) return;
       setStreamStatus(hasConnected ? 'RECONNECTING' : 'CONNECTING');
-      socket = new WebSocket(simulationApi.streamUrl(activeSimId));
+      const protocols = simulationApi.streamProtocols();
+      socket = protocols
+        ? new WebSocket(simulationApi.streamUrl(activeSimId), protocols)
+        : new WebSocket(simulationApi.streamUrl(activeSimId));
       socket.onopen = () => {
         hasConnected = true;
         if (mounted) setStreamStatus('LIVE');
       };
       socket.onmessage = event => {
         if (!mounted) return;
-        const data = JSON.parse(event.data) as SimulationSnapshot;
-        setSnapshot(data);
-        setEvents(data.events);
-        setBackendConnected(true);
+        try {
+          applySnapshot(parseSimulationSnapshot(event.data, activeSimId));
+        } catch (error) {
+          setErrorMessage(error instanceof Error ? error.message : 'Invalid simulation stream payload.');
+          socket?.close();
+        }
       };
       socket.onerror = () => socket?.close();
       socket.onclose = () => {
@@ -99,13 +112,27 @@ function App() {
       if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
       window.clearInterval(fallbackInterval);
     };
-  }, [activeSimId]);
+  }, [activeSimId, applySnapshot]);
 
-  const applySnapshot = (next: SimulationSnapshot) => {
-    setSnapshot(next);
-    setEvents(next.events);
-    setBackendConnected(true);
-  };
+  useEffect(() => {
+    if (!activeSimId || !currentGraph || !simulatedGraphRef.current) return;
+    if (plantSimulationSignature(currentGraph) === simulatedGraphRef.current) return;
+
+    simulatedGraphRef.current = null;
+    latestSnapshotRef.current = null;
+    setActiveSimId(null);
+    setSimState(null);
+    setSnapshot(null);
+    setEvents([]);
+    setStreamStatus('IDLE');
+  }, [activeSimId, currentGraph]);
+
+  useEffect(() => {
+    if (!activeSimId) return;
+    return () => {
+      void simulationApi.delete(activeSimId, true).catch(() => undefined);
+    };
+  }, [activeSimId]);
 
   const handleStart = async () => {
     if (isBusy) return;
@@ -124,7 +151,7 @@ function App() {
         throw new Error(`Simulation blocked: resolve ${blocking || validation.issues.length} topology issue${blocking === 1 ? '' : 's'} first.`);
       }
 
-      const graphSignature = JSON.stringify(graph);
+      const graphSignature = plantSimulationSignature(graph);
       const graphChanged = simulatedGraphRef.current !== graphSignature;
       let simulationId = activeSimId;
       if (!simulationId || graphChanged) {
@@ -133,6 +160,7 @@ function App() {
         simulatedGraphRef.current = graphSignature;
         setActiveSimId(created.id);
         setSimState(created);
+        latestSnapshotRef.current = null;
         setSnapshot(null);
         setEvents(created.events);
       }
@@ -163,10 +191,13 @@ function App() {
   const handleSpeed = async (speed: string) => {
     if (!activeSimId || isBusy) return;
     setErrorMessage(null);
+    setIsBusy(true);
     try {
       applySnapshot(await simulationApi.command(activeSimId, 'set_speed', { speed }));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to change simulation speed.');
+    } finally {
+      setIsBusy(false);
     }
   };
 
@@ -321,7 +352,7 @@ function App() {
             </div>
           )}
           <div
-            className={viewMode === 'BUILDER' ? 'absolute inset-0 flex flex-col' : 'hidden'}
+            className={`absolute inset-0 flex flex-col ${viewMode === 'BUILDER' ? 'visible' : 'invisible pointer-events-none'}`}
             aria-hidden={viewMode !== 'BUILDER'}
           >
             <Blueprint 
@@ -609,39 +640,6 @@ function SimulationView({ graph, snapshot, events, status, streamStatus, isBusy,
       </div>
     </main>
   );
-}
-
-const UTILITY_CLASSES = new Set(['UTILITY_SUBSTATION', 'WATER_COOLING_SYSTEM', 'ELECTRICAL_SUPPLY', 'TRANSFORMER', 'WATER_SYSTEM', 'WATER_PUMP', 'COMPRESSOR']);
-
-function isUtilityClass(componentClass: string) {
-  return UTILITY_CLASSES.has(componentClass);
-}
-
-function orderProcessNodes(nodes: PlantGraph['nodes'], edges: PlantGraph['edges']) {
-  const processNodes = nodes.filter(node => !isUtilityClass(node.component_class));
-  const processIds = new Set(processNodes.map(node => node.id));
-  const inDegree = new Map(processNodes.map(node => [node.id, 0]));
-  const adjacency = new Map(processNodes.map(node => [node.id, [] as string[]]));
-  edges.filter(edge => edge.connection_type === 'MATERIAL' && processIds.has(edge.source_node) && processIds.has(edge.target_node)).forEach(edge => {
-    adjacency.get(edge.source_node)?.push(edge.target_node);
-    inDegree.set(edge.target_node, (inDegree.get(edge.target_node) ?? 0) + 1);
-  });
-  const queue = processNodes.filter(node => inDegree.get(node.id) === 0).sort((a, b) => a.position.x - b.position.x);
-  const ordered: PlantGraph['nodes'] = [];
-  while (queue.length > 0) {
-    const node = queue.shift()!;
-    ordered.push(node);
-    for (const targetId of adjacency.get(node.id) ?? []) {
-      const nextDegree = (inDegree.get(targetId) ?? 1) - 1;
-      inDegree.set(targetId, nextDegree);
-      if (nextDegree === 0) {
-        const target = processNodes.find(candidate => candidate.id === targetId);
-        if (target) queue.push(target);
-      }
-    }
-  }
-  const seen = new Set(ordered.map(node => node.id));
-  return [...ordered, ...processNodes.filter(node => !seen.has(node.id)).sort((a, b) => a.position.x - b.position.x)];
 }
 
 function telemetryStatusClass(status?: string) {

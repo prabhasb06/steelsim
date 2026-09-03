@@ -16,7 +16,7 @@
    - Implemented `POST /api/simulations/{sim_id}/command` accepting `{ command: "start" | "pause" | "resume" | "reset" | "set_speed", payload: { speed?: string } }`.
    - Updated `GET /api/simulations/{sim_id}` and `POST /api/simulations` to return full snapshots containing live telemetry.
    - Added `WS /api/simulations/{sim_id}/stream` for backend-authoritative live snapshots and `GET /api/simulations/{sim_id}/snapshots` for bounded trace history.
-   - Simulation start is rejected server-side when a non-empty plant has blocking topology issues.
+   - Start, run, and resume all reject non-empty plants with blocking topology issues; simulations also have explicit deletion and bounded manager retention.
 2. **Schema Resilience & Pydantic Validation (`backend/app/models/schemas.py`)**:
    - Added `node_telemetry: Dict[str, Any]` and `plant_summary: Dict[str, Any]` to both `SimulationState` and `SimulationSnapshot`.
    - Added a Pydantic `model_validator` to `SimulationConfiguration` that automatically aliases `{ plant_graph: ... }` to `plant`, resolving a critical bug where simulations were running with an empty 0-node plant.
@@ -25,9 +25,9 @@
    - Added `_calculate_telemetry()` executed on every clock tick and lifecycle transition.
    - Computes machine operating states (`IDLE`, `RUNNING`), real-time power (MW / kW), operating temperatures (°C), cooling water circulation (m³/h), and throughput (t/h) based on equipment specifications (`RAW_MATERIAL_STORAGE`, `INDUCTION_FURNACE`, `LADLE_REFINING_FURNACE`, `CONTINUOUS_CASTING_MACHINE`, `REHEATING_FURNACE`, `ROLLING_MILL`, `TMT_QUENCHING_BOX`, `COOLING_BED`, `UTILITY_SUBSTATION`, `WATER_COOLING_SYSTEM`).
    - Computes plant-wide totals (`total_power_mw`, `total_water_m3h`, `active_nodes`, `interlocked_nodes`, `total_nodes`).
-   - Maintains a monotonic state version, bounded snapshot history, live subscribers, and utility-aware equipment interlocks.
+   - Maintains a monotonic state version, bounded snapshot history, live subscribers, utility-aware equipment interlocks, bottleneck-propagated material flow, aggregate utility-capacity enforcement, and a CPU-safe capped `MAX` speed.
 4. **Backend Test Suite**:
-   - All **35/35 tests pass (100%)** via `pytest` (`test_simulation.py` and `test_topology.py`), including WebSocket delivery, history, monotonic versioning, safety gating, and the full melt-shop baseline.
+   - All **43/43 tests pass (100%)** via `pytest` (`test_simulation.py` and `test_topology.py`), including HTTP/WebSocket access protection, lifecycle cleanup, material-flow bounds, aggregate utility capacity, history, monotonic versioning, safety gating, and the full melt-shop baseline.
 
 ### B. Frontend Clean Single-Interface Architecture
 1. **Master Simulation Deck in App Header (`frontend/src/App.tsx`)**:
@@ -36,6 +36,7 @@
    - **Controls:** **Run ▶**, **Pause ⏸**, **Reset ↺**, and Speed buttons (`1x`, `5x`, `10x`, `60x`).
    - **Real-Time KPIs:** Live `Tick` counter, `Power (MW)`, `Water (m³/h)`, and `Active Machines (N/M)`.
    - **Graph Synchronization:** Added `currentGraph` state and `onGraphChange` listener to ensure `handleStart` sends the actual live canvas nodes/edges directly to `/api/simulations`.
+   - Physics-relevant graph edits retire stale backend simulations automatically, while layout-only movement preserves the active run.
    - Removed dead duplicate views where the canvas and an old static HUD table were stacked on top of each other.
 2. **Restored, Clean Canvas Toolbar (`frontend/src/components/PlantBuilder/Blueprint.tsx`)**:
    - Canvas toolbar restored to spacious, uncluttered engineering actions:
@@ -52,7 +53,7 @@
 5. **Dual-Tab Slide-up Drawer (`frontend/src/components/PlantBuilder/ValidationPanel.tsx`)**:
    - Toggles cleanly between **Topology Issues** (design/port errors) and the live **Event Console** (timestamped simulation event journal).
 6. **Frontend Build Verification**:
-   - `npm run build` compiles with **0 TypeScript and Vite errors** (production bundle generated cleanly in ~800ms).
+   - `npm run lint`, four Node unit tests, the production build, and a Puppeteer browser workflow all pass. The browser regression covers Demo → Simulation → Run → Pause → Reset → topology invalidation → Overview with zero console errors.
 7. **Task 2 Control Center (`frontend/src/App.tsx`)**:
    - Restored the strongest parts of the original standalone Task 2 UI inside the unified React application: live connection status, lifecycle/version/time/utilization KPIs, process-flow diagram, utility lane, clickable equipment inspector, authoritative state trace, and event journal.
    - WebSocket streaming is primary; a slower HTTP snapshot poll remains as a resilient fallback.
@@ -77,7 +78,12 @@
   * `GET /api/simulations/{id}`: Returns `SimulationState` / `SimulationSnapshot` with `node_telemetry` and `plant_summary`.
   * `WS /api/simulations/{id}/stream`: Streams authoritative snapshots after every lifecycle change and deterministic tick.
   * `GET /api/simulations/{id}/snapshots`: Returns the bounded state-trace history.
+  * `DELETE /api/simulations/{id}`: Cancels and removes an obsolete simulation.
   * `GET /api/plant/template/tmt`: Loads 10-node verified baseline TMT plant topology.
+
+* **Optional Demo Protection**:
+  * Set `STEELSIM_API_KEY` on the backend and matching `VITE_STEELSIM_API_KEY` on the frontend.
+  * CORS defaults to the two local Vite origins and can be overridden with `STEELSIM_ALLOWED_ORIGINS`.
 
 ---
 
