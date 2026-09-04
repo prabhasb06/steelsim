@@ -50,6 +50,12 @@ try {
 
   await clickButton('Simulation');
   await page.waitForFunction(() => document.body.textContent?.includes('Simulation Control Center'));
+  const hiddenBuilderOpacity = await page.$eval('[data-testid="builder-layer"]', element => getComputedStyle(element).opacity);
+  assert.equal(
+    hiddenBuilderOpacity,
+    '0',
+    'Plant Builder must be fully transparent outside the Builder view',
+  );
   await clickButton('Run Simulation');
   await page.waitForFunction(() => document.body.textContent?.includes('LIVE BACKEND'));
   await page.waitForFunction(() => {

@@ -352,7 +352,8 @@ function App() {
             </div>
           )}
           <div
-            className={`absolute inset-0 flex flex-col ${viewMode === 'BUILDER' ? 'visible' : 'invisible pointer-events-none'}`}
+            className={`absolute inset-0 flex flex-col ${viewMode === 'BUILDER' ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+            data-testid="builder-layer"
             aria-hidden={viewMode !== 'BUILDER'}
           >
             <Blueprint 
