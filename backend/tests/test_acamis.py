@@ -2,10 +2,19 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.routes import manager
+from app.acamis.model_gateway import _provider_error_message
 from main import app
 
 
 client = TestClient(app)
+
+
+def test_model_gateway_translates_invalid_api_key_without_echoing_provider_json():
+    detail = '{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","details":[{"reason":"API_KEY_INVALID"}]}}'
+    message = _provider_error_message(400, detail)
+    assert message.startswith("INVALID API KEY:")
+    assert "Google AI Studio" in message
+    assert "{\"error\"" not in message
 
 
 @pytest.fixture(autouse=True)

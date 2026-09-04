@@ -62,6 +62,35 @@ def _select_gemini_model(requested: str, available: list[str]) -> tuple[str, boo
     raise ValueError("The API key has no compatible Gemini text-generation model available")
 
 
+def _provider_error_message(status_code: int, detail: str) -> str:
+    try:
+        payload = json.loads(detail)
+        error = payload.get("error", {}) if isinstance(payload, dict) else {}
+        message = str(error.get("message", ""))
+        reasons = {
+            str(item.get("reason", ""))
+            for item in error.get("details", [])
+            if isinstance(item, dict)
+        }
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        message = detail
+        reasons = set()
+
+    lowered = message.lower()
+    if "API_KEY_INVALID" in reasons or "api key not valid" in lowered:
+        return (
+            "INVALID API KEY: Google did not accept this credential. Copy an active Gemini API key "
+            "from Google AI Studio and paste the complete value; ACAMIS does not save it."
+        )
+    if status_code == 403:
+        return "API KEY PERMISSION DENIED: verify that this key is enabled and restricted for the Gemini API."
+    if status_code == 429:
+        return "MODEL RATE LIMIT REACHED: wait for the provider quota window to reset, then retry."
+    if status_code == 404 and "model" in lowered:
+        return "MODEL UNAVAILABLE: reconnect so ACAMIS can select a model from the provider's current catalog."
+    return f"Provider rejected the request ({status_code}): {message[:240] or detail[:240]}"
+
+
 def _request_json(url: str, *, api_key: str, method: str = "GET", payload: dict[str, Any] | None = None, provider: str) -> dict[str, Any]:
     headers = {"Accept": "application/json"}
     if provider == "GEMINI":
@@ -77,8 +106,8 @@ def _request_json(url: str, *, api_key: str, method: str = "GET", payload: dict[
         with urlopen(request, timeout=12) as response:
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:300]
-        raise ValueError(f"Provider rejected the request ({exc.code}): {detail}") from exc
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise ValueError(_provider_error_message(exc.code, detail)) from exc
     except (URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise ValueError(f"Unable to reach a valid model endpoint: {exc}") from exc
 
