@@ -5,11 +5,11 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 
 SUPPORTED_PROVIDERS = {"OPENAI_COMPATIBLE", "GEMINI"}
+DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
 
 
 def public_status(sim: Any) -> dict[str, Any]:
@@ -25,6 +25,41 @@ def public_status(sim: Any) -> dict[str, Any]:
             "message": "Deterministic ACAMIS policy engine is active; no external reasoning model is connected.",
         }
     return {key: value for key, value in config.items() if key != "api_key"}
+
+
+def _gemini_model_names(catalog: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    for entry in catalog.get("models", []):
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name", "")).removeprefix("models/").strip()
+        methods = entry.get("supportedGenerationMethods", [])
+        if name and (not methods or "generateContent" in methods):
+            names.append(name)
+    return names
+
+
+def _select_gemini_model(requested: str, available: list[str]) -> tuple[str, bool]:
+    requested = requested.removeprefix("models/")
+    if requested in available:
+        return requested, False
+
+    stable_flash = [
+        name for name in available
+        if name.startswith("gemini-")
+        and "flash" in name
+        and not any(marker in name for marker in ("image", "live", "preview", "exp", "tts"))
+    ]
+    for preferred in (DEFAULT_GEMINI_MODEL, "gemini-3.8-flash"):
+        if preferred in stable_flash:
+            return preferred, True
+    if stable_flash:
+        return sorted(stable_flash, reverse=True)[0], True
+
+    generative = [name for name in available if name.startswith("gemini-")]
+    if generative:
+        return sorted(generative, reverse=True)[0], True
+    raise ValueError("The API key has no compatible Gemini text-generation model available")
 
 
 def _request_json(url: str, *, api_key: str, method: str = "GET", payload: dict[str, Any] | None = None, provider: str) -> dict[str, Any]:
@@ -65,16 +100,27 @@ async def connect(sim: Any, provider: str, model: str, api_key: str, base_url: s
         raise ValueError("Use HTTPS for remote providers; HTTP is allowed only for a local model server")
 
     test_url = f"{resolved_base}/models"
-    await asyncio.to_thread(_request_json, test_url, api_key=api_key, provider=provider)
+    catalog = await asyncio.to_thread(_request_json, test_url, api_key=api_key, provider=provider)
+    available_models: list[str] = []
+    model_changed = False
+    if provider == "GEMINI":
+        available_models = _gemini_model_names(catalog)
+        model, model_changed = _select_gemini_model(model, available_models)
+
+    message = "Connection verified. Model output is advisory and remains behind ACAMIS policy gates."
+    if model_changed:
+        message = f"Requested model is unavailable; ACAMIS selected {model} from the verified provider catalog. Policy gates remain in control."
     sim.acamis_model_config = {
         "configured": True,
         "connected": True,
         "provider": provider,
         "model": model,
         "base_url": resolved_base,
+        "transport": "INTERACTIONS" if provider == "GEMINI" else "CHAT_COMPLETIONS",
+        "available_models": available_models[:25],
         "api_key": api_key,
         "last_tested_at": datetime.now(timezone.utc).isoformat(),
-        "message": "Connection verified. Model output is advisory and remains behind ACAMIS policy gates.",
+        "message": message,
     }
     return public_status(sim)
 
@@ -98,13 +144,24 @@ async def ask(sim: Any, operator_message: str, acamis_context: dict[str, Any]) -
     )
     context_text = json.dumps(acamis_context, separators=(",", ":"), default=str)
     if config["provider"] == "GEMINI":
-        endpoint = f"{config['base_url']}/models/{quote(config['model'], safe='')}:generateContent"
-        payload = {"systemInstruction": {"parts": [{"text": system}]}, "contents": [{"role": "user", "parts": [{"text": f"CONTEXT:\n{context_text}\n\nOPERATOR:\n{message}"}]}]}
+        endpoint = f"{config['base_url']}/interactions"
+        payload = {
+            "model": config["model"],
+            "store": False,
+            "system_instruction": system,
+            "input": f"CONTEXT:\n{context_text}\n\nOPERATOR:\n{message}",
+        }
         result = await asyncio.to_thread(_request_json, endpoint, api_key=config["api_key"], provider=config["provider"], method="POST", payload=payload)
-        try:
-            reply = result["candidates"][0]["content"]["parts"][0]["text"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise ValueError("Gemini returned no readable response") from exc
+        reply_parts = [
+            str(item["text"])
+            for step in result.get("steps", [])
+            if isinstance(step, dict) and step.get("type") == "model_output"
+            for item in step.get("content", [])
+            if isinstance(item, dict) and item.get("type") == "text" and item.get("text")
+        ]
+        if not reply_parts:
+            raise ValueError("Gemini Interactions returned no readable response")
+        reply = "\n".join(reply_parts)
     else:
         endpoint = f"{config['base_url']}/chat/completions"
         payload = {"model": config["model"], "temperature": 0.1, "messages": [{"role": "system", "content": system}, {"role": "user", "content": f"CONTEXT:\n{context_text}\n\nOPERATOR:\n{message}"}]}

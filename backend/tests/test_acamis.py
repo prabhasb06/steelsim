@@ -169,3 +169,45 @@ def test_model_gateway_verifies_connection_without_exposing_key(monkeypatch):
     disconnected = client.post(f"/api/simulations/{sim_id}/acamis/model/disconnect")
     assert disconnected.status_code == 200
     assert disconnected.json()["model_gateway"]["configured"] is False
+
+
+def test_gemini_connection_replaces_retired_model_and_uses_interactions(monkeypatch):
+    sim_id = create_running_tmt_simulation()
+    requests = []
+
+    def fake_provider_request(url, **kwargs):
+        requests.append((url, kwargs))
+        if kwargs.get("method") == "POST":
+            return {
+                "status": "completed",
+                "steps": [{"type": "model_output", "content": [{"type": "text", "text": "Residual risk is low."}]}],
+            }
+        return {
+            "models": [
+                {"name": "models/gemini-3.6-flash", "supportedGenerationMethods": ["generateContent"]},
+                {"name": "models/text-embedding-005", "supportedGenerationMethods": ["embedContent"]},
+            ]
+        }
+
+    monkeypatch.setattr("app.acamis.model_gateway._request_json", fake_provider_request)
+    connected = client.post(f"/api/simulations/{sim_id}/acamis/model/connect", json={
+        "provider": "GEMINI",
+        "model": "models/gemini-2.5-flash",
+        "api_key": "transient-secret",
+    })
+    assert connected.status_code == 200
+    gateway = connected.json()
+    assert gateway["model"] == "gemini-3.6-flash"
+    assert gateway["transport"] == "INTERACTIONS"
+    assert gateway["available_models"] == ["gemini-3.6-flash"]
+    assert "selected gemini-3.6-flash" in gateway["message"]
+    assert "api_key" not in gateway
+
+    reviewed = client.post(f"/api/simulations/{sim_id}/acamis/model/chat", json={"message": "Review recovery"})
+    assert reviewed.status_code == 200
+    assert reviewed.json()["reply"] == "Residual risk is low."
+    assert requests[-1][0].endswith("/interactions")
+    assert requests[-1][1]["payload"]["model"] == "gemini-3.6-flash"
+    assert requests[-1][1]["payload"]["store"] is False
+    assert "system_instruction" in requests[-1][1]["payload"]
+    assert "transient-secret" not in requests[-1][1]["payload"]["input"]
