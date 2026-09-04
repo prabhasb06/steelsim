@@ -354,9 +354,10 @@ function App() {
             </div>
           )}
           <div
-            className={`absolute inset-0 flex flex-col ${viewMode === 'BUILDER' ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
+            className={`absolute inset-0 flex flex-col ${viewMode === 'BUILDER' ? 'translate-x-0' : 'pointer-events-none translate-x-[200%]'}`}
             data-testid="builder-layer"
             aria-hidden={viewMode !== 'BUILDER'}
+            inert={viewMode !== 'BUILDER'}
           >
             <Blueprint 
                 isFocusMode={isFocusMode} 

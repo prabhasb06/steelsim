@@ -16,9 +16,9 @@ const browser = await puppeteer.launch({
 });
 const page = await browser.newPage();
 page.setDefaultTimeout(15_000);
-const consoleErrors = [];
+const consoleIssues = [];
 page.on('console', message => {
-  if (message.type() === 'error') consoleErrors.push(message.text());
+  if (message.type() === 'error' || message.type() === 'warn') consoleIssues.push(message.text());
 });
 
 async function clickButton(label) {
@@ -46,17 +46,23 @@ try {
     const simulations = await fetch('/api/simulations').then(response => response.json());
     return simulations.map(simulation => simulation.id);
   });
+  await clickButton('ACAMIS Intelligence');
+  await page.waitForFunction(() => document.body.textContent?.includes('Operational Intelligence is standing by'));
+  await clickButton('Open Simulation Control');
+  await page.waitForFunction(() => document.body.textContent?.includes('Simulation Control Center'));
+  await clickButton('Plant Builder');
   await clickButton('Demo');
   await page.waitForFunction(() => document.body.textContent?.includes('Medium Frequency Induction Furnace'));
 
   await clickButton('Simulation');
   await page.waitForFunction(() => document.body.textContent?.includes('Simulation Control Center'));
-  const hiddenBuilderOpacity = await page.$eval('[data-testid="builder-layer"]', element => getComputedStyle(element).opacity);
-  assert.equal(
-    hiddenBuilderOpacity,
-    '0',
-    'Plant Builder must be fully transparent outside the Builder view',
-  );
+  const hiddenBuilderStyle = await page.$eval('[data-testid="builder-layer"]', element => {
+    const style = getComputedStyle(element);
+    return { inert: element.inert, pointerEvents: style.pointerEvents, left: element.getBoundingClientRect().left, viewport: window.innerWidth };
+  });
+  assert.equal(hiddenBuilderStyle.inert, true);
+  assert.equal(hiddenBuilderStyle.pointerEvents, 'none');
+  assert.ok(hiddenBuilderStyle.left >= hiddenBuilderStyle.viewport, 'Inactive Builder must be moved outside the viewport');
   await clickButton('Run Simulation');
   await page.waitForFunction(() => document.body.textContent?.includes('LIVE BACKEND'));
   await page.waitForFunction(() => {
@@ -119,7 +125,7 @@ try {
   await clickButton('Overview');
   await page.waitForFunction(() => document.body.textContent?.includes('Plant Overview'));
 
-  assert.deepEqual(consoleErrors, []);
+  assert.deepEqual(consoleIssues, []);
   console.log('SteelSim browser smoke test passed.');
 } finally {
   await browser.close();
