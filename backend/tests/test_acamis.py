@@ -105,6 +105,14 @@ def test_autonomous_mode_executes_safe_procedure_but_escalates_high_risk():
     blocked = client.post(f"/api/simulations/{sim_id}/acamis/procedures/reduce_heat_load")
     assert blocked.status_code == 409
     assert "Human verification" in blocked.json()["detail"]
+    approved = client.post(
+        f"/api/simulations/{sim_id}/acamis/procedures/stabilize_furnace",
+        json={"human_verified": True},
+    )
+    assert approved.status_code == 200
+    assert approved.json()["plant_health"] == "NORMAL"
+    assert approved.json()["recovery_plan"]["status"] == "RECOVERED"
+    assert any(item["event"] == "HUMAN_VERIFICATION_CONFIRMED" for item in approved.json()["audit"])
 
 
 def test_switching_to_autonomous_re_evaluates_existing_incident():

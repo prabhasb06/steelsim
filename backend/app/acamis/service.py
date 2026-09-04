@@ -57,12 +57,21 @@ def status(sim: Any) -> dict[str, Any]:
     findings = [_finding(domain, scenario, severity, affected) for domain in DOMAINS]
     escalation = any(item["escalation_required"] for item in findings)
     contained = bool(definition and definition.get("containment") in getattr(sim, "acamis_mitigations", set()))
+    procedure_statuses: dict[str, str] = {}
+    if definition:
+        for procedure in definition["procedures"]:
+            if procedure in getattr(sim, "acamis_mitigations", set()):
+                procedure_statuses[procedure] = "APPLIED"
+            elif escalation and procedure == definition.get("resolution"):
+                procedure_statuses[procedure] = "AWAITING_HUMAN_APPROVAL"
+            else:
+                procedure_statuses[procedure] = "AVAILABLE"
     return {
         "contract_version": "acamis.v1", "source": "SteelSim Digital Twin", "connection": "LIVE" if sim.status.value == "RUNNING" else "STANDBY", "simulation_id": sim.id, "state_version": sim.state_version,
         "operating_mode": getattr(sim, "acamis_autonomy", "OBSERVE"), "plant_health": "STABILIZED" if contained else ("INCIDENT" if scenario else ("DEGRADED" if sim.plant_summary["interlocked_nodes"] else "NORMAL")),
         "incident": None if not definition else {"id": scenario, "title": definition["title"], "severity": severity, "summary": definition["summary"], "affected_equipment": affected, "verified": True, "contained": contained},
         "specialist_findings": findings,
-        "recovery_plan": {"status": "HUMAN_VERIFICATION_REQUIRED" if escalation else ("READY" if scenario else "RECOVERED" if getattr(sim, "acamis_last_resolution", None) else "MONITORING"), "priority_order": ["Safety", "Equipment limits", "Quality", "Maintenance", "Production", "Energy", "Logistics"], "recommended_procedures": definition["procedures"] if definition else [], "rationale": "Safe containment is automatic. Final high-risk repairs require an operator; low-risk incidents recover automatically."},
+        "recovery_plan": {"status": "HUMAN_VERIFICATION_REQUIRED" if escalation else ("READY" if scenario else "RECOVERED" if getattr(sim, "acamis_last_resolution", None) else "MONITORING"), "priority_order": ["Safety", "Equipment limits", "Quality", "Maintenance", "Production", "Energy", "Logistics"], "recommended_procedures": definition["procedures"] if definition else [], "procedure_statuses": procedure_statuses, "rationale": "Safe containment is automatic. Final high-risk repairs require an operator; low-risk incidents recover automatically."},
         "model_gateway": model_gateway.public_status(sim),
         "model_advisory": getattr(sim, "acamis_last_model_advisory", None),
         "context_manifest": {"ruleset": "acamis-simulation-policy.v1", "snapshot_contract": "acamis.v1", "domains": list(DOMAINS), "approved_procedures_only": True},
@@ -113,7 +122,7 @@ def set_autonomy(sim: Any, mode: str) -> dict[str, Any]:
     _run_autonomous_response(sim)
     return status(sim)
 
-def execute_procedure(sim: Any, procedure: str) -> dict[str, Any]:
+def execute_procedure(sim: Any, procedure: str, *, human_verified: bool = False) -> dict[str, Any]:
     valid = {name for item in SCENARIOS.values() for name in item["procedures"]}
     if procedure not in valid:
         raise ValueError("Procedure is not registered in the ACAMIS library")
@@ -124,7 +133,12 @@ def execute_procedure(sim: Any, procedure: str) -> dict[str, Any]:
         getattr(sim, "acamis_autonomy", "OBSERVE") == "AUTONOMOUS_SIMULATION"
         and assessment["recovery_plan"]["status"] == "HUMAN_VERIFICATION_REQUIRED"
     ):
-        raise ValueError("Human verification is required; switch to Advisory for an operator-approved procedure")
+        scenario = getattr(sim, "acamis_scenario", None)
+        if not human_verified:
+            raise ValueError("Human verification is required before applying the final recovery procedure")
+        if not scenario or procedure != SCENARIOS[scenario]["resolution"]:
+            raise ValueError("Human verification can approve only the incident's final recovery procedure")
+        _audit(sim, "HUMAN_VERIFICATION_CONFIRMED", f"Operator approved the final simulated recovery procedure: {procedure}.", "HIGH")
     scenario = getattr(sim, "acamis_scenario", None)
     if scenario and procedure == SCENARIOS[scenario]["resolution"]:
         _resolve_incident(sim, scenario, procedure, autonomous=False)

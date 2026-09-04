@@ -17,6 +17,9 @@ class ModelConnectionRequest(BaseModel):
 class ModelChatRequest(BaseModel):
     message: str
 
+class ProcedureRequest(BaseModel):
+    human_verified: bool = False
+
 def _simulation(sim_id: str):
     sim = manager.get_simulation(sim_id)
     if not sim:
@@ -66,9 +69,9 @@ async def update_autonomy(sim_id: str, request: AutonomyRequest):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 @router.post("/procedures/{procedure}")
-async def execute_procedure(sim_id: str, procedure: str):
+async def execute_procedure(sim_id: str, procedure: str, request: ProcedureRequest | None = None):
     try:
-        return service.execute_procedure(_simulation(sim_id), procedure)
+        return service.execute_procedure(_simulation(sim_id), procedure, human_verified=bool(request and request.human_verified))
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
