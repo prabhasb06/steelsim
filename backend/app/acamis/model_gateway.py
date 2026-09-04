@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 
 
 SUPPORTED_PROVIDERS = {"OPENAI_COMPATIBLE", "GEMINI"}
-DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 
 
 def public_status(sim: Any) -> dict[str, Any]:
@@ -50,7 +50,7 @@ def _select_gemini_model(requested: str, available: list[str]) -> tuple[str, boo
         and "flash" in name
         and not any(marker in name for marker in ("image", "live", "preview", "exp", "tts"))
     ]
-    for preferred in (DEFAULT_GEMINI_MODEL, "gemini-3.8-flash"):
+    for preferred in (DEFAULT_GEMINI_MODEL, "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"):
         if preferred in stable_flash:
             return preferred, True
     if stable_flash:
