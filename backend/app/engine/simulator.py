@@ -34,7 +34,9 @@ class SteelSimEngine:
         self.acamis_autonomy = "OBSERVE"
         self.acamis_mitigations: set[str] = set()
         self.acamis_audit: list[dict] = []
+        self.acamis_last_resolution: dict | None = None
         self.acamis_model_config: dict | None = None
+        self.acamis_last_model_advisory: dict | None = None
         
         self._task = None
         self._tick_step = 1  # 1 simulated second per tick
@@ -372,6 +374,8 @@ class SteelSimEngine:
         self.acamis_scenario = None
         self.acamis_mitigations.clear()
         self.acamis_audit.clear()
+        self.acamis_last_resolution = None
+        self.acamis_last_model_advisory = None
         self._calculate_telemetry()
         
         self.events.clear()
@@ -381,6 +385,7 @@ class SteelSimEngine:
 
     def inject_acamis_scenario(self, scenario: str):
         self.acamis_scenario = scenario
+        self.acamis_last_resolution = None
         self.acamis_mitigations.clear()
         self._calculate_telemetry()
         self._add_event(EventType.ACAMIS_SCENARIO_INJECTED, EventSeverity.WARNING, "ACAMIS Scenario Control", f"Injected deterministic scenario: {scenario}")

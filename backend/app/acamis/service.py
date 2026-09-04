@@ -6,11 +6,11 @@ from typing import Any
 from app.acamis import model_gateway
 
 SCENARIOS: dict[str, dict[str, Any]] = {
-    "cooling_water_degradation": {"title": "Cooling-water degradation", "severity": "HIGH", "summary": "Cooling capacity has fallen below the process demand envelope.", "procedures": ["activate_standby_cooling", "reduce_heat_load"]},
-    "furnace_instability": {"title": "Furnace instability", "severity": "HIGH", "summary": "Furnace process temperature is deviating from its operating window.", "procedures": ["reduce_heat_load", "stabilize_furnace"]},
-    "rolling_mill_slowdown": {"title": "Rolling-mill slowdown", "severity": "WARNING", "summary": "Rolling capacity is constrained and downstream throughput is at risk.", "procedures": ["pace_upstream_material", "inspect_rolling_mill"]},
-    "substation_capacity_constraint": {"title": "Electrical capacity constraint", "severity": "HIGH", "summary": "Electrical demand is approaching the configured utility operating envelope.", "procedures": ["reduce_heat_load", "stage_energy_consumers"]},
-    "raw_material_disruption": {"title": "Raw-material supply disruption", "severity": "WARNING", "summary": "Incoming material availability is constraining the production chain.", "procedures": ["pace_upstream_material", "review_material_plan"]},
+    "cooling_water_degradation": {"title": "Cooling-water degradation", "severity": "HIGH", "summary": "Cooling capacity has fallen below the process demand envelope.", "procedures": ["activate_standby_cooling", "reduce_heat_load"], "containment": "reduce_heat_load", "resolution": "activate_standby_cooling"},
+    "furnace_instability": {"title": "Furnace instability", "severity": "HIGH", "summary": "Furnace process temperature is deviating from its operating window.", "procedures": ["reduce_heat_load", "stabilize_furnace"], "containment": "reduce_heat_load", "resolution": "stabilize_furnace"},
+    "rolling_mill_slowdown": {"title": "Rolling-mill slowdown", "severity": "WARNING", "summary": "Rolling capacity is constrained and downstream throughput is at risk.", "procedures": ["pace_upstream_material", "inspect_rolling_mill"], "resolution": "inspect_rolling_mill"},
+    "substation_capacity_constraint": {"title": "Electrical capacity constraint", "severity": "HIGH", "summary": "Electrical demand is approaching the configured utility operating envelope.", "procedures": ["reduce_heat_load", "stage_energy_consumers"], "containment": "reduce_heat_load", "resolution": "stage_energy_consumers"},
+    "raw_material_disruption": {"title": "Raw-material supply disruption", "severity": "WARNING", "summary": "Incoming material availability is constraining the production chain.", "procedures": ["pace_upstream_material", "review_material_plan"], "resolution": "review_material_plan"},
 }
 DOMAINS = ("Safety", "Maintenance", "Quality", "Production", "Energy", "Logistics")
 
@@ -56,36 +56,52 @@ def status(sim: Any) -> dict[str, Any]:
     severity = definition["severity"] if definition else "INFO"
     findings = [_finding(domain, scenario, severity, affected) for domain in DOMAINS]
     escalation = any(item["escalation_required"] for item in findings)
+    contained = bool(definition and definition.get("containment") in getattr(sim, "acamis_mitigations", set()))
     return {
         "contract_version": "acamis.v1", "source": "SteelSim Digital Twin", "connection": "LIVE" if sim.status.value == "RUNNING" else "STANDBY", "simulation_id": sim.id, "state_version": sim.state_version,
-        "operating_mode": getattr(sim, "acamis_autonomy", "OBSERVE"), "plant_health": "INCIDENT" if scenario else ("DEGRADED" if sim.plant_summary["interlocked_nodes"] else "NORMAL"),
-        "incident": None if not definition else {"id": scenario, "title": definition["title"], "severity": severity, "summary": definition["summary"], "affected_equipment": affected, "verified": True},
+        "operating_mode": getattr(sim, "acamis_autonomy", "OBSERVE"), "plant_health": "STABILIZED" if contained else ("INCIDENT" if scenario else ("DEGRADED" if sim.plant_summary["interlocked_nodes"] else "NORMAL")),
+        "incident": None if not definition else {"id": scenario, "title": definition["title"], "severity": severity, "summary": definition["summary"], "affected_equipment": affected, "verified": True, "contained": contained},
         "specialist_findings": findings,
-        "recovery_plan": {"status": "HUMAN_VERIFICATION_REQUIRED" if escalation else ("READY" if scenario else "MONITORING"), "priority_order": ["Safety", "Equipment limits", "Quality", "Maintenance", "Production", "Energy", "Logistics"], "recommended_procedures": definition["procedures"] if definition else [], "rationale": "ACAMIS uses deterministic policy gates; it does not bypass simulation interlocks."},
+        "recovery_plan": {"status": "HUMAN_VERIFICATION_REQUIRED" if escalation else ("READY" if scenario else "RECOVERED" if getattr(sim, "acamis_last_resolution", None) else "MONITORING"), "priority_order": ["Safety", "Equipment limits", "Quality", "Maintenance", "Production", "Energy", "Logistics"], "recommended_procedures": definition["procedures"] if definition else [], "rationale": "Safe containment is automatic. Final high-risk repairs require an operator; low-risk incidents recover automatically."},
         "model_gateway": model_gateway.public_status(sim),
+        "model_advisory": getattr(sim, "acamis_last_model_advisory", None),
         "context_manifest": {"ruleset": "acamis-simulation-policy.v1", "snapshot_contract": "acamis.v1", "domains": list(DOMAINS), "approved_procedures_only": True},
         "audit": list(reversed(getattr(sim, "acamis_audit", [])))[0:50], "snapshot": sim.get_snapshot().model_dump(mode="json"),
     }
+
+def _resolve_incident(sim: Any, scenario: str, procedure: str, autonomous: bool) -> None:
+    sim.apply_acamis_procedure(procedure)
+    _audit(sim, "AUTONOMOUS_PROCEDURE_EXECUTED" if autonomous else "PROCEDURE_EXECUTED", f"Applied simulated recovery procedure: {procedure}.")
+    sim.acamis_last_resolution = {"scenario": scenario, "procedure": procedure, "at": _now()}
+    sim.clear_acamis_scenario()
+    _audit(sim, "INCIDENT_RECOVERED", f"Verified recovery from {SCENARIOS[scenario]['title']}; plant returned to its operating envelope.")
+
+def _run_autonomous_response(sim: Any) -> None:
+    scenario = getattr(sim, "acamis_scenario", None)
+    if not scenario or getattr(sim, "acamis_autonomy", "OBSERVE") != "AUTONOMOUS_SIMULATION":
+        return
+    definition = SCENARIOS[scenario]
+    assessment = status(sim)
+    if assessment["recovery_plan"]["status"] == "READY":
+        _resolve_incident(sim, scenario, definition["resolution"], autonomous=True)
+        return
+    containment = definition.get("containment")
+    if containment and containment not in sim.acamis_mitigations:
+        sim.apply_acamis_procedure(containment)
+        _audit(sim, "AUTONOMOUS_CONTAINMENT_EXECUTED", f"ACAMIS safely contained the incident with: {containment}.", "WARNING")
+    _audit(sim, "HUMAN_VERIFICATION_REQUESTED", "The plant is stabilized. Human verification is required for the final high-risk repair.", "HIGH")
 
 def inject_scenario(sim: Any, scenario: str) -> dict[str, Any]:
     if scenario not in SCENARIOS:
         raise ValueError("Unknown ACAMIS scenario")
     sim.inject_acamis_scenario(scenario)
     _audit(sim, "SCENARIO_INJECTED", SCENARIOS[scenario]["title"], SCENARIOS[scenario]["severity"])
-    assessment = status(sim)
-    if (
-        getattr(sim, "acamis_autonomy", "OBSERVE") == "AUTONOMOUS_SIMULATION"
-        and assessment["recovery_plan"]["status"] == "READY"
-    ):
-        procedure = assessment["recovery_plan"]["recommended_procedures"][0]
-        sim.apply_acamis_procedure(procedure)
-        _audit(sim, "AUTONOMOUS_PROCEDURE_EXECUTED", f"ACAMIS automatically applied safe simulated procedure: {procedure}.")
-    elif getattr(sim, "acamis_autonomy", "OBSERVE") == "AUTONOMOUS_SIMULATION":
-        _audit(sim, "HUMAN_VERIFICATION_REQUESTED", "ACAMIS contained the scenario without executing a high-risk procedure.", "HIGH")
+    _run_autonomous_response(sim)
     return status(sim)
 
 def clear_scenario(sim: Any) -> dict[str, Any]:
     sim.clear_acamis_scenario()
+    sim.acamis_last_resolution = None
     _audit(sim, "SCENARIO_CLEARED", "Scenario cleared and simulation baseline restored.")
     return status(sim)
 
@@ -94,6 +110,7 @@ def set_autonomy(sim: Any, mode: str) -> dict[str, Any]:
         raise ValueError("Invalid ACAMIS operating mode")
     sim.acamis_autonomy = mode
     _audit(sim, "AUTONOMY_MODE_CHANGED", f"ACAMIS operating mode set to {mode}.")
+    _run_autonomous_response(sim)
     return status(sim)
 
 def execute_procedure(sim: Any, procedure: str) -> dict[str, Any]:
@@ -108,6 +125,10 @@ def execute_procedure(sim: Any, procedure: str) -> dict[str, Any]:
         and assessment["recovery_plan"]["status"] == "HUMAN_VERIFICATION_REQUIRED"
     ):
         raise ValueError("Human verification is required; switch to Advisory for an operator-approved procedure")
-    sim.apply_acamis_procedure(procedure)
-    _audit(sim, "PROCEDURE_EXECUTED", f"Applied simulated procedure: {procedure}.")
+    scenario = getattr(sim, "acamis_scenario", None)
+    if scenario and procedure == SCENARIOS[scenario]["resolution"]:
+        _resolve_incident(sim, scenario, procedure, autonomous=False)
+    else:
+        sim.apply_acamis_procedure(procedure)
+        _audit(sim, "PROCEDURE_EXECUTED", f"Applied simulated procedure: {procedure}.")
     return status(sim)

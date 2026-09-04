@@ -92,8 +92,13 @@ try {
   await new Promise(resolve => setTimeout(resolve, 500));
   await clickButton('Rolling mill');
   await page.waitForFunction(() => document.body.textContent?.includes('AUTONOMOUS_PROCEDURE_EXECUTED'));
+  await page.waitForFunction(() => document.body.textContent?.includes('Autonomous recovery verified'));
+  await page.select('select', 'OBSERVE');
+  await new Promise(resolve => setTimeout(resolve, 500));
   await clickButton('Furnace stability');
+  await page.select('select', 'AUTONOMOUS_SIMULATION');
   await page.waitForFunction(() => document.body.textContent?.includes('HUMAN_VERIFICATION_REQUIRED'));
+  await page.waitForFunction(() => document.body.textContent?.includes('STABILIZED'));
   const highRiskActionsBlocked = await page.$$eval('button', buttons =>
     buttons.filter(button => button.textContent?.trim() === 'Apply').every(button => button.disabled),
   );

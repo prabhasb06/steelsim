@@ -63,7 +63,9 @@ def test_observe_mode_blocks_procedure_then_advisory_allows_it():
     assert changed_mode.status_code == 200
     applied = client.post(f"/api/simulations/{sim_id}/acamis/procedures/activate_standby_cooling")
     assert applied.status_code == 200
-    assert applied.json()["audit"][0]["event"] == "PROCEDURE_EXECUTED"
+    assert applied.json()["plant_health"] == "NORMAL"
+    assert applied.json()["recovery_plan"]["status"] == "RECOVERED"
+    assert applied.json()["audit"][0]["event"] == "INCIDENT_RECOVERED"
 
 
 def test_static_reset_route_clears_incident_and_mitigations():
@@ -89,15 +91,44 @@ def test_autonomous_mode_executes_safe_procedure_but_escalates_high_risk():
     client.post(f"/api/simulations/{sim_id}/acamis/autonomy", json={"mode": "AUTONOMOUS_SIMULATION"})
     safe = client.post(f"/api/simulations/{sim_id}/acamis/scenarios/rolling_mill_slowdown")
     assert safe.status_code == 200
-    assert safe.json()["audit"][0]["event"] == "AUTONOMOUS_PROCEDURE_EXECUTED"
+    assert safe.json()["incident"] is None
+    assert safe.json()["plant_health"] == "NORMAL"
+    assert safe.json()["recovery_plan"]["status"] == "RECOVERED"
+    assert safe.json()["audit"][0]["event"] == "INCIDENT_RECOVERED"
 
     critical = client.post(f"/api/simulations/{sim_id}/acamis/scenarios/furnace_instability")
     assert critical.status_code == 200
+    assert critical.json()["plant_health"] == "STABILIZED"
+    assert critical.json()["incident"]["contained"] is True
     assert critical.json()["recovery_plan"]["status"] == "HUMAN_VERIFICATION_REQUIRED"
     assert critical.json()["audit"][0]["event"] == "HUMAN_VERIFICATION_REQUESTED"
     blocked = client.post(f"/api/simulations/{sim_id}/acamis/procedures/reduce_heat_load")
     assert blocked.status_code == 409
     assert "Human verification" in blocked.json()["detail"]
+
+
+def test_switching_to_autonomous_re_evaluates_existing_incident():
+    sim_id = create_running_tmt_simulation()
+    injected = client.post(f"/api/simulations/{sim_id}/acamis/scenarios/furnace_instability")
+    assert injected.json()["plant_health"] == "INCIDENT"
+
+    autonomous = client.post(f"/api/simulations/{sim_id}/acamis/autonomy", json={"mode": "AUTONOMOUS_SIMULATION"})
+    assert autonomous.status_code == 200
+    data = autonomous.json()
+    assert data["plant_health"] == "STABILIZED"
+    assert data["incident"]["contained"] is True
+    assert [item["event"] for item in data["audit"][:2]] == ["HUMAN_VERIFICATION_REQUESTED", "AUTONOMOUS_CONTAINMENT_EXECUTED"]
+
+
+def test_advisory_human_approval_completes_high_risk_repair():
+    sim_id = create_running_tmt_simulation()
+    client.post(f"/api/simulations/{sim_id}/acamis/scenarios/furnace_instability")
+    client.post(f"/api/simulations/{sim_id}/acamis/autonomy", json={"mode": "ADVISORY"})
+    repaired = client.post(f"/api/simulations/{sim_id}/acamis/procedures/stabilize_furnace")
+    assert repaired.status_code == 200
+    assert repaired.json()["incident"] is None
+    assert repaired.json()["plant_health"] == "NORMAL"
+    assert repaired.json()["recovery_plan"]["status"] == "RECOVERED"
 
 
 def test_model_gateway_verifies_connection_without_exposing_key(monkeypatch):
@@ -121,6 +152,13 @@ def test_model_gateway_verifies_connection_without_exposing_key(monkeypatch):
     status = client.get(f"/api/simulations/{sim_id}/acamis/status").json()
     assert status["model_gateway"]["model"] == "test-model"
     assert "api_key" not in status["model_gateway"]
+
+    client.post(f"/api/simulations/{sim_id}/acamis/scenarios/rolling_mill_slowdown")
+    automatic = client.post(f"/api/simulations/{sim_id}/acamis/autonomy", json={"mode": "AUTONOMOUS_SIMULATION"})
+    assert automatic.status_code == 200
+    assert automatic.json()["model_advisory"]["reply"] == "Advisory review complete."
+    assert automatic.json()["model_advisory"]["trigger"] == "AUTONOMY_ENABLED"
+    assert automatic.json()["audit"][0]["event"] == "MODEL_AUTONOMOUS_REVIEW_RECEIVED"
 
     reviewed = client.post(f"/api/simulations/{sim_id}/acamis/model/chat", json={"message": "Assess the incident"})
     assert reviewed.status_code == 200

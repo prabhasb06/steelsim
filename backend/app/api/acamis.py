@@ -23,6 +23,20 @@ def _simulation(sim_id: str):
         raise HTTPException(status_code=404, detail="Simulation not found")
     return sim
 
+async def _automatic_model_review(sim, trigger: str) -> None:
+    gateway = model_gateway.public_status(sim)
+    has_operational_change = getattr(sim, "acamis_scenario", None) or getattr(sim, "acamis_last_resolution", None)
+    if not gateway["connected"] or getattr(sim, "acamis_autonomy", "OBSERVE") != "AUTONOMOUS_SIMULATION" or not has_operational_change:
+        return
+    context = service.status(sim)
+    context.pop("snapshot", None)
+    try:
+        result = await model_gateway.ask(sim, "Review ACAMIS's autonomous response, identify residual risk, and state whether human verification remains required.", context)
+        sim.acamis_last_model_advisory = {**result, "trigger": trigger}
+        service._audit(sim, "MODEL_AUTONOMOUS_REVIEW_RECEIVED", f"{result['provider']} / {result['model']} reviewed the autonomous response.")
+    except ValueError as exc:
+        service._audit(sim, "MODEL_AUTONOMOUS_REVIEW_FAILED", f"Deterministic recovery continued after model review failed: {exc}", "WARNING")
+
 @router.get("/status")
 async def get_acamis_status(sim_id: str):
     return service.status(_simulation(sim_id))
@@ -34,14 +48,20 @@ async def reset_scenario(sim_id: str):
 @router.post("/scenarios/{scenario}")
 async def inject_scenario(sim_id: str, scenario: str):
     try:
-        return service.inject_scenario(_simulation(sim_id), scenario)
+        sim = _simulation(sim_id)
+        service.inject_scenario(sim, scenario)
+        await _automatic_model_review(sim, "SCENARIO_INJECTED")
+        return service.status(sim)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 @router.post("/autonomy")
 async def update_autonomy(sim_id: str, request: AutonomyRequest):
     try:
-        return service.set_autonomy(_simulation(sim_id), request.mode.upper())
+        sim = _simulation(sim_id)
+        service.set_autonomy(sim, request.mode.upper())
+        await _automatic_model_review(sim, "AUTONOMY_ENABLED")
+        return service.status(sim)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
