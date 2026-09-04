@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.api.routes import router
 from app.api.plant import router as plant_router
+from app.api.acamis import router as acamis_router
 
 app = FastAPI(title="SteelSim Backend")
 
@@ -43,3 +44,4 @@ app.add_middleware(
 
 app.include_router(router)
 app.include_router(plant_router)
+app.include_router(acamis_router)

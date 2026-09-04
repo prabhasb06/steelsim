@@ -15,6 +15,7 @@ const browser = await puppeteer.launch({
   ...(executablePath ? { executablePath } : {}),
 });
 const page = await browser.newPage();
+page.setDefaultTimeout(15_000);
 const consoleErrors = [];
 page.on('console', message => {
   if (message.type() === 'error') consoleErrors.push(message.text());
@@ -40,7 +41,7 @@ async function clickButtonByTitle(title) {
 }
 
 try {
-  await page.goto(baseUrl, { waitUntil: 'networkidle0' });
+  await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
   const existingSimulationIds = await page.evaluate(async () => {
     const simulations = await fetch('/api/simulations').then(response => response.json());
     return simulations.map(simulation => simulation.id);
@@ -67,6 +68,34 @@ try {
     return simulations.find(simulation => !existingIds.includes(simulation.id))?.id;
   }, existingSimulationIds);
   assert.ok(createdSimulationId, 'Expected the UI to create a new backend simulation');
+
+  await clickButton('ACAMIS Intelligence');
+  await page.waitForFunction(() => document.body.textContent?.includes('Autonomous Operations Center'));
+  await clickButton('Cooling water');
+  await page.waitForFunction(() => document.body.textContent?.includes('Verified operating incident'));
+  for (const domain of ['Safety', 'Maintenance', 'Quality', 'Production', 'Energy', 'Logistics']) {
+    assert.equal(await page.evaluate(label => document.body.textContent?.includes(label), domain), true);
+  }
+  await page.select('select', 'ADVISORY');
+  await new Promise(resolve => setTimeout(resolve, 500));
+  await clickButton('Apply');
+  await page.waitForFunction(() => document.body.textContent?.includes('PROCEDURE_EXECUTED'));
+  await clickButton('Clear scenario');
+  await page.waitForFunction(() => document.body.textContent?.includes('Plant baseline is being monitored'));
+  await page.select('select', 'AUTONOMOUS_SIMULATION');
+  await new Promise(resolve => setTimeout(resolve, 500));
+  await clickButton('Rolling mill');
+  await page.waitForFunction(() => document.body.textContent?.includes('AUTONOMOUS_PROCEDURE_EXECUTED'));
+  await clickButton('Furnace stability');
+  await page.waitForFunction(() => document.body.textContent?.includes('HUMAN_VERIFICATION_REQUIRED'));
+  const highRiskActionsBlocked = await page.$$eval('button', buttons =>
+    buttons.filter(button => button.textContent?.trim() === 'Apply').every(button => button.disabled),
+  );
+  assert.equal(highRiskActionsBlocked, true, 'High-risk autonomous procedures must require human verification');
+  await clickButton('Clear scenario');
+
+  await clickButton('Simulation');
+  await page.waitForFunction(() => document.body.textContent?.includes('Simulation Control Center'));
 
   await clickButton('Pause');
   await page.waitForFunction(() => {

@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { LayoutDashboard, Factory, Activity, Truck, Wrench, Shield, Zap, Cpu, Play, Pause, RotateCcw, ArrowRight, CheckCircle2, AlertTriangle, Clock3 } from 'lucide-react';
 import { Blueprint } from './components/PlantBuilder/Blueprint';
 import { simulationApi } from './api';
+import { AcamisConsole } from './components/AcamisConsole';
 import type { SimulationCommand, SimulationEvent, SimulationSnapshot, SimulationState } from './types';
 import type { PlantGraph, ValidationResult } from './types/topology';
 import { isUtilityClass, orderProcessNodes, parseSimulationSnapshot, plantSimulationSignature, shouldAcceptSnapshot } from './simulation-utils';
 
-type ViewMode = 'OVERVIEW' | 'BUILDER' | 'SIMULATION' | 'OPTIMIZATION';
+type ViewMode = 'OVERVIEW' | 'BUILDER' | 'SIMULATION' | 'OPTIMIZATION' | 'ACAMIS';
 type StreamStatus = 'IDLE' | 'CONNECTING' | 'LIVE' | 'RECONNECTING';
 
 function App() {
@@ -222,6 +223,7 @@ function App() {
           <NavItem icon={<LayoutDashboard />} label="Overview" active={viewMode==='OVERVIEW'} onClick={() => setViewMode('OVERVIEW')} collapsed={sidebarCollapsed} />
           <NavItem icon={<Factory />} label="Plant Builder" active={viewMode==='BUILDER'} onClick={() => setViewMode('BUILDER')} collapsed={sidebarCollapsed} />
           <NavItem icon={<Activity />} label="Simulation" active={viewMode==='SIMULATION'} onClick={() => setViewMode('SIMULATION')} collapsed={sidebarCollapsed} />
+          <NavItem icon={<Cpu />} label="ACAMIS Intelligence" active={viewMode==='ACAMIS'} onClick={() => setViewMode('ACAMIS')} collapsed={sidebarCollapsed} />
           
           <div className={`mt-8 mb-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:block whitespace-nowrap ${sidebarCollapsed ? 'md:hidden' : ''}`}>Future Modules</div>
           <NavItem icon={<Cpu />} label="Optimize Plant" active={viewMode==='OPTIMIZATION'} onClick={() => setViewMode('OPTIMIZATION')} collapsed={sidebarCollapsed} />
@@ -394,6 +396,9 @@ function App() {
           )}
           {viewMode === 'OPTIMIZATION' && (
             <OptimizationView onOpenBuilder={() => setViewMode('BUILDER')} />
+          )}
+          {viewMode === 'ACAMIS' && (
+            <AcamisConsole simulationId={activeSimId} snapshot={snapshot} onOpenSimulation={() => setViewMode('SIMULATION')} />
           )}
         </div>
       </div>

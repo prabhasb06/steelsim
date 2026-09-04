@@ -30,6 +30,11 @@ class SteelSimEngine:
         self.speed = "1x"
         self.status = SimulationStatus.READY
         self.events: list[SimulationEvent] = []
+        self.acamis_scenario: str | None = None
+        self.acamis_autonomy = "OBSERVE"
+        self.acamis_mitigations: set[str] = set()
+        self.acamis_audit: list[dict] = []
+        self.acamis_model_config: dict | None = None
         
         self._task = None
         self._tick_step = 1  # 1 simulated second per tick
@@ -59,6 +64,8 @@ class SteelSimEngine:
         is_running = self.status == SimulationStatus.RUNNING
         phase = self.tick % 60
         load_factor = 0.92 + ((phase % 7) * 0.02) if is_running else 0.0
+        if "reduce_heat_load" in self.acamis_mitigations:
+            load_factor *= 0.78
 
         # Defaults cover only values that are intentionally not exposed as
         # configurable catalogue parameters. Configured engineering values
@@ -149,6 +156,13 @@ class SteelSimEngine:
             pwr = round(rated_power_kw * load_factor, 1) if operating else 0.0
             wat = round(rated_water * (0.95 + (phase % 4) * 0.02), 1) if operating else 0.0
             temp = round(rated_temperature + (phase % 5) - 2.0, 1) if operating else 25.0
+            if self.acamis_scenario == "furnace_instability" and "FURNACE" in c_class and operating:
+                temp += 85.0
+                pwr = round(pwr * 1.15, 1)
+            if self.acamis_scenario == "cooling_water_degradation" and rated_water > 0 and operating:
+                temp += 42.0 if "activate_standby_cooling" not in self.acamis_mitigations else 8.0
+            if self.acamis_scenario == "substation_capacity_constraint" and operating:
+                pwr = round(pwr * 1.18, 1)
 
             telemetry[n.id] = {
                 "id": n.id,
@@ -186,6 +200,12 @@ class SteelSimEngine:
                 for port in n.ports
             )
             rated_rate = node_telemetry["rated_throughput_tph"] * load_factor
+            if self.acamis_scenario == "rolling_mill_slowdown" and "MILL" in n.component_class.value:
+                rated_rate *= 0.45
+            if self.acamis_scenario == "raw_material_disruption" and not has_material_input:
+                rated_rate *= 0.35
+            if "pace_upstream_material" in self.acamis_mitigations and not has_material_input:
+                rated_rate *= 0.8
             if not has_material_input:
                 node_telemetry["throughput_tph"] = round(rated_rate, 1)
                 continue
@@ -306,7 +326,7 @@ class SteelSimEngine:
             tick=self.tick,
             state_version=self.state_version,
             seed=self.seed,
-            system_health="DEGRADED" if self.plant_summary["interlocked_nodes"] else "NORMAL",
+            system_health="INCIDENT" if self.acamis_scenario else ("DEGRADED" if self.plant_summary["interlocked_nodes"] else "NORMAL"),
             node_telemetry=self.node_telemetry,
             plant_summary=self.plant_summary,
             events=self.events[-50:]  # Last 50 events for quick access
@@ -349,11 +369,34 @@ class SteelSimEngine:
         self.tick = 0
         self.speed = "1x"
         self.rng = random.Random(self.seed)
+        self.acamis_scenario = None
+        self.acamis_mitigations.clear()
+        self.acamis_audit.clear()
         self._calculate_telemetry()
         
         self.events.clear()
         self._snapshots.clear()
         self._add_event(EventType.SIMULATION_RESET, EventSeverity.INFO, "SimulationControl", "Simulation reset to initial state")
+        self._state_changed()
+
+    def inject_acamis_scenario(self, scenario: str):
+        self.acamis_scenario = scenario
+        self.acamis_mitigations.clear()
+        self._calculate_telemetry()
+        self._add_event(EventType.ACAMIS_SCENARIO_INJECTED, EventSeverity.WARNING, "ACAMIS Scenario Control", f"Injected deterministic scenario: {scenario}")
+        self._state_changed()
+
+    def clear_acamis_scenario(self):
+        self.acamis_scenario = None
+        self.acamis_mitigations.clear()
+        self._calculate_telemetry()
+        self._add_event(EventType.ACAMIS_SCENARIO_CLEARED, EventSeverity.INFO, "ACAMIS Scenario Control", "Cleared ACAMIS scenario and mitigations")
+        self._state_changed()
+
+    def apply_acamis_procedure(self, procedure: str):
+        self.acamis_mitigations.add(procedure)
+        self._calculate_telemetry()
+        self._add_event(EventType.ACAMIS_PROCEDURE_APPLIED, EventSeverity.NOTICE, "ACAMIS Procedure Library", f"Applied approved simulated procedure: {procedure}")
         self._state_changed()
 
     def set_speed(self, speed: str):
