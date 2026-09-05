@@ -45,3 +45,8 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(plant_router)
 app.include_router(acamis_router)
+
+frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+if os.path.isdir(frontend_dist):
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="static")
