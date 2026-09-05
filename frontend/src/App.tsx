@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { LayoutDashboard, Factory, Activity, Truck, Wrench, Shield, Zap, Cpu, Play, Pause, RotateCcw, ArrowRight, CheckCircle2, AlertTriangle, Clock3 } from 'lucide-react';
 import { Blueprint } from './components/PlantBuilder/Blueprint';
-import { simulationApi } from './api';
+import { ApiError, simulationApi } from './api';
 import { AcamisConsole } from './components/AcamisConsole';
+import { IncidentImpact } from './components/IncidentImpact';
 import type { SimulationCommand, SimulationEvent, SimulationSnapshot, SimulationState } from './types';
 import type { PlantGraph, ValidationResult } from './types/topology';
 import { isUtilityClass, orderProcessNodes, parseSimulationSnapshot, plantSimulationSignature, shouldAcceptSnapshot } from './simulation-utils';
@@ -24,6 +25,11 @@ function App() {
   const [events, setEvents] = useState<SimulationEvent[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [focusRequest, setFocusRequest] = useState<{ nodeId: string; nonce: number } | null>(null);
+  const locateEquipment = (view: 'BUILDER' | 'SIMULATION', nodeId: string) => {
+    setFocusRequest({ nodeId, nonce: Date.now() });
+    setViewMode(view);
+  };
   const simulatedGraphRef = useRef<string | null>(null);
   const latestSnapshotRef = useRef<SimulationSnapshot | null>(null);
 
@@ -70,6 +76,17 @@ function App() {
         }
       } catch (error) {
         if (mounted) {
+          if (error instanceof ApiError && error.status === 404) {
+            latestSnapshotRef.current = null;
+            simulatedGraphRef.current = null;
+            setActiveSimId(null);
+            setSimState(null);
+            setSnapshot(null);
+            setEvents([]);
+            setStreamStatus('IDLE');
+            setErrorMessage('The backend simulation session ended. Your plant remains loaded; click Run to start a new session and reconnect your model if needed.');
+            return;
+          }
           setBackendConnected(false);
           setErrorMessage(error instanceof Error ? error.message : 'Unable to read simulation state.');
         }
@@ -240,9 +257,9 @@ function App() {
         
         {/* TOP BAR: MASTER SIMULATION CONTROLS & KPI DECK */}
         {!isFocusMode && (
-        <div className="h-14 border-b border-industrial-700 bg-industrial-800 flex items-center justify-between px-4 z-10 flex-shrink-0">
+        <div className="h-14 overflow-x-auto border-b border-industrial-700 bg-industrial-800 flex items-center justify-between gap-4 px-4 z-10 flex-shrink-0">
           {/* Left: Brand & Plant Title */}
-          <div className="flex items-center space-x-3">
+          <div className="flex shrink-0 items-center space-x-3">
             <div className="flex items-center gap-2">
               <span className="font-bold text-white tracking-wider text-base">SteelSim</span>
               <span className="hidden 2xl:inline text-xs bg-industrial-700 text-gray-300 px-2 py-0.5 rounded font-mono">TMT Mini-Mill</span>
@@ -259,7 +276,7 @@ function App() {
           </div>
 
           {/* Center: Master Simulation Controls */}
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-3">
             {/* Run / Pause / Reset Buttons */}
             <div className="flex items-center gap-1.5 bg-industrial-900/80 p-1 rounded-md border border-industrial-700">
               <button 
@@ -269,7 +286,7 @@ function App() {
                 title="Run Simulation"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Run</span>
+                <span>{isBusy ? 'Working…' : currentStatus === 'RUNNING' ? 'Running' : currentStatus === 'PAUSED' ? 'Resume' : 'Run'}</span>
               </button>
               <button 
                 onClick={() => handleCommand('pause')}
@@ -369,6 +386,7 @@ function App() {
                 events={events}
                 onGraphChange={setCurrentGraph}
                 onValidationChange={setTopologyValidation}
+                focusRequest={focusRequest}
             />
           </div>
           {viewMode === 'OVERVIEW' && (
@@ -392,6 +410,8 @@ function App() {
               streamStatus={streamStatus}
               isBusy={isBusy}
               onRun={handleStart}
+              focusRequest={focusRequest}
+              onLocate={locateEquipment}
               onOpenBuilder={() => setViewMode('BUILDER')}
             />
           )}
@@ -399,7 +419,7 @@ function App() {
             <OptimizationView onOpenBuilder={() => setViewMode('BUILDER')} />
           )}
           {viewMode === 'ACAMIS' && (
-            <AcamisConsole simulationId={activeSimId} snapshot={snapshot} onOpenSimulation={() => setViewMode('SIMULATION')} />
+            <AcamisConsole simulationId={activeSimId} snapshot={snapshot} graph={currentGraph} onLocate={locateEquipment} onOpenSimulation={() => setViewMode('SIMULATION')} />
           )}
         </div>
       </div>
@@ -531,7 +551,9 @@ function ReadinessRow({ label, value, ready, neutral = false }: { label: string;
   );
 }
 
-function SimulationView({ graph, snapshot, events, status, streamStatus, isBusy, onRun, onOpenBuilder }: {
+function SimulationView({ graph, snapshot, events, status, streamStatus, isBusy, onRun, onOpenBuilder, focusRequest, onLocate }: {
+  focusRequest: { nodeId: string; nonce: number } | null;
+  onLocate: (view: 'BUILDER' | 'SIMULATION', nodeId: string) => void;
   graph: PlantGraph | null;
   snapshot: SimulationSnapshot | null;
   events: SimulationEvent[];
@@ -544,6 +566,14 @@ function SimulationView({ graph, snapshot, events, status, streamStatus, isBusy,
   const nodes = graph?.nodes ?? [];
   const edges = graph?.edges ?? [];
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focusRequest) return;
+    const timer = window.setTimeout(() => {
+      setSelectedNodeId(focusRequest.nodeId);
+      document.getElementById(`process-${focusRequest.nodeId}`)?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [focusRequest]);
   const processNodes = orderProcessNodes(nodes, edges);
   const utilityNodes = nodes.filter(node => isUtilityClass(node.component_class));
   const selectedNode = nodes.find(node => node.id === selectedNodeId) ?? null;
@@ -589,6 +619,7 @@ function SimulationView({ graph, snapshot, events, status, streamStatus, isBusy,
               <MetricCard label="Cooling Water" value={`${snapshot?.plant_summary.total_water_m3h ?? 0} m³/h`} detail="Total circulation rate" accent="text-cyan-400" />
             </div>
 
+            <IncidentImpact snapshot={snapshot} graph={graph} onLocate={onLocate} />
             <section className="mt-5 overflow-hidden rounded-lg border border-industrial-700 bg-industrial-800/60">
               <div className="flex items-center justify-between border-b border-industrial-700 px-4 py-3">
                 <h2 className="text-sm font-bold text-white">Process Flow Diagram</h2>
@@ -665,8 +696,10 @@ function ProcessCard({ node, snapshot, selected, onSelect, compact = false }: {
 }) {
   const telemetry = snapshot?.node_telemetry[node.id];
   const status = telemetry?.status ?? 'IDLE';
+  const impacted = snapshot?.acamis_impact?.state === 'ACTIVE' && !!snapshot.acamis_impact.equipment[node.id];
   return (
-    <button type="button" onClick={onSelect} className={`${compact ? 'w-56' : 'w-60'} flex-none rounded border p-3 text-left transition-colors ${selected ? 'border-blue-400 bg-blue-950/30 shadow-[0_0_0_1px_rgba(96,165,250,0.35)]' : status === 'RUNNING' ? 'border-emerald-700 bg-industrial-900/80 hover:border-emerald-500' : status === 'INTERLOCKED' ? 'border-red-700 bg-red-950/20 hover:border-red-500' : 'border-industrial-600 bg-industrial-900/80 hover:border-blue-600'}`}>
+    <button id={`process-${node.id}`} type="button" onClick={onSelect} className={`${compact ? 'w-56' : 'w-60'} flex-none rounded border p-3 text-left transition-colors ${impacted ? 'border-amber-400 bg-amber-950/30 ring-1 ring-amber-500' : selected ? 'border-blue-400 bg-blue-950/30 shadow-[0_0_0_1px_rgba(96,165,250,0.35)]' : status === 'RUNNING' ? 'border-emerald-700 bg-industrial-900/80 hover:border-emerald-500' : status === 'INTERLOCKED' ? 'border-red-700 bg-red-950/20 hover:border-red-500' : 'border-industrial-600 bg-industrial-900/80 hover:border-blue-600'}`}>
+      {impacted && <div className="mb-2 text-[10px] font-bold text-amber-300">ACAMIS · AFFECTED</div>}
       <div className="font-mono text-[10px] text-blue-300">{String(node.metadata.engineering_id ?? node.id).toUpperCase()}</div>
       <div className="mt-1 min-h-9 text-xs font-bold leading-4 text-white">{node.name}</div>
       <span className={`mt-3 inline-flex rounded border px-2 py-0.5 font-mono text-[9px] font-bold tracking-wider ${telemetryStatusClass(status)}`}>{status}</span>

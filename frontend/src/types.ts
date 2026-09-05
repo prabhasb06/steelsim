@@ -59,6 +59,14 @@ export interface SimulationState {
 }
 
 export interface SimulationSnapshot {
+    acamis_impact?: {
+        origin?: string;
+        scenario: string;
+        state: 'ACTIVE' | 'RECOVERED';
+        tick: number;
+        recovery_tick: number | null;
+        equipment: Record<string, Record<string, { baseline: number; actual: number }>>;
+    } | null;
     simulation_id: string;
     id: string;
     simulation_time: string;

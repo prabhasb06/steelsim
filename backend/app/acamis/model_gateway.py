@@ -145,7 +145,7 @@ async def connect(sim: Any, provider: str, model: str, api_key: str, base_url: s
         "provider": provider,
         "model": model,
         "base_url": resolved_base,
-        "transport": "INTERACTIONS" if provider == "GEMINI" else "CHAT_COMPLETIONS",
+        "transport": "GENERATE_CONTENT" if provider == "GEMINI" else "CHAT_COMPLETIONS",
         "available_models": available_models[:25],
         "api_key": api_key,
         "last_tested_at": datetime.now(timezone.utc).isoformat(),
@@ -173,24 +173,40 @@ async def ask(sim: Any, operator_message: str, acamis_context: dict[str, Any]) -
     )
     context_text = json.dumps(acamis_context, separators=(",", ":"), default=str)
     if config["provider"] == "GEMINI":
-        endpoint = f"{config['base_url']}/interactions"
+        endpoint = f"{config['base_url']}/models/{config['model']}:generateContent"
         payload = {
-            "model": config["model"],
-            "store": False,
-            "system_instruction": system,
-            "input": f"CONTEXT:\n{context_text}\n\nOPERATOR:\n{message}",
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": f"CONTEXT:\n{context_text}\n\nOPERATOR:\n{message}"}],
+                }
+            ],
+            "systemInstruction": {
+                "parts": [{"text": system}],
+            },
+            "generationConfig": {
+                "temperature": 0.2,
+            },
         }
-        result = await asyncio.to_thread(_request_json, endpoint, api_key=config["api_key"], provider=config["provider"], method="POST", payload=payload)
-        reply_parts = [
-            str(item["text"])
-            for step in result.get("steps", [])
-            if isinstance(step, dict) and step.get("type") == "model_output"
-            for item in step.get("content", [])
-            if isinstance(item, dict) and item.get("type") == "text" and item.get("text")
-        ]
-        if not reply_parts:
-            raise ValueError("Gemini Interactions returned no readable response")
-        reply = "\n".join(reply_parts)
+        result = await asyncio.to_thread(
+            _request_json,
+            endpoint,
+            api_key=config["api_key"],
+            provider=config["provider"],
+            method="POST",
+            payload=payload,
+        )
+        candidates = result.get("candidates", [])
+        if not candidates or "content" not in candidates[0]:
+            raise ValueError("Gemini returned no readable response candidate")
+        parts = candidates[0]["content"].get("parts", [])
+        reply = "".join(
+            part.get("text", "")
+            for part in parts
+            if isinstance(part, dict) and "text" in part
+        )
+        if not reply.strip():
+            raise ValueError("Gemini returned an empty response")
     else:
         endpoint = f"{config['base_url']}/chat/completions"
         payload = {"model": config["model"], "temperature": 0.1, "messages": [{"role": "system", "content": system}, {"role": "user", "content": f"CONTEXT:\n{context_text}\n\nOPERATOR:\n{message}"}]}

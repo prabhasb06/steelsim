@@ -95,15 +95,64 @@ def test_unknown_scenario_and_procedure_are_rejected():
     assert client.post(f"/api/simulations/{sim_id}/acamis/procedures/not-real").status_code == 409
 
 
+@pytest.mark.parametrize("scenario", ["cooling_water_degradation", "furnace_instability", "rolling_mill_slowdown", "substation_capacity_constraint", "raw_material_disruption"])
+def test_scenario_impact_matches_actual_telemetry_and_clears(scenario):
+    sim_id = create_running_tmt_simulation()
+    data = client.post(f"/api/simulations/{sim_id}/acamis/scenarios/{scenario}").json()
+    impact = data["snapshot"]["acamis_impact"]
+    assert impact["equipment"]
+    assert set(data["incident"]["affected_equipment"]) == set(impact["equipment"])
+    for node_id, metrics in impact["equipment"].items():
+        for metric, values in metrics.items():
+            assert values["actual"] != values["baseline"]
+            assert values["actual"] == data["snapshot"]["node_telemetry"][node_id][metric]
+    cleared = client.post(f"/api/simulations/{sim_id}/acamis/scenarios/reset").json()
+    assert cleared["snapshot"]["acamis_impact"] is None
+
+
+def test_pause_freezes_recovery_and_rejects_new_injection():
+    from app.acamis.service import advance_recovery
+    sim_id = create_running_tmt_simulation()
+    client.post(f"/api/simulations/{sim_id}/acamis/autonomy", json={"mode": "AUTONOMOUS_SIMULATION"})
+    client.post(f"/api/simulations/{sim_id}/acamis/scenarios/rolling_mill_slowdown")
+    sim = manager.get_simulation(sim_id)
+    impact = sim.acamis_impact["equipment"]
+    sim.pause()
+    sim.tick = sim.acamis_recovery_tick
+    advance_recovery(sim)
+    assert sim.acamis_scenario == "rolling_mill_slowdown"
+    assert sim.acamis_impact["equipment"] == impact
+    assert client.post(f"/api/simulations/{sim_id}/acamis/scenarios/raw_material_disruption").status_code == 409
+    client.post(f"/api/simulations/{sim_id}/acamis/autonomy", json={"mode": "OBSERVE"})
+    assert sim.acamis_recovery_tick is None
+    sim.reset()
+    assert sim.get_snapshot().acamis_impact is None
+
+
+def test_unrelated_procedure_cannot_repair_active_incident():
+    sim_id = create_running_tmt_simulation()
+    client.post(f"/api/simulations/{sim_id}/acamis/autonomy", json={"mode": "ADVISORY"})
+    client.post(f"/api/simulations/{sim_id}/acamis/scenarios/rolling_mill_slowdown")
+    assert client.post(f"/api/simulations/{sim_id}/acamis/procedures/stabilize_furnace").status_code == 409
+
+
 def test_autonomous_mode_executes_safe_procedure_but_escalates_high_risk():
     sim_id = create_running_tmt_simulation()
     client.post(f"/api/simulations/{sim_id}/acamis/autonomy", json={"mode": "AUTONOMOUS_SIMULATION"})
     safe = client.post(f"/api/simulations/{sim_id}/acamis/scenarios/rolling_mill_slowdown")
     assert safe.status_code == 200
-    assert safe.json()["incident"] is None
-    assert safe.json()["plant_health"] == "NORMAL"
-    assert safe.json()["recovery_plan"]["status"] == "RECOVERED"
-    assert safe.json()["audit"][0]["event"] == "INCIDENT_RECOVERED"
+    assert safe.json()["incident"] is not None
+    assert safe.json()["recovery_plan"]["status"] == "RECOVERING"
+    from app.acamis.service import advance_recovery, status
+    sim = manager.get_simulation(sim_id)
+    sim.tick = sim.acamis_recovery_tick - 1
+    advance_recovery(sim)
+    assert sim.acamis_scenario == "rolling_mill_slowdown"
+    sim.tick += 1
+    advance_recovery(sim)
+    assert status(sim)["incident"] is None
+    assert status(sim)["recovery_plan"]["status"] == "RECOVERED"
+    assert sim.get_snapshot().acamis_impact["state"] == "RECOVERED"
 
     critical = client.post(f"/api/simulations/{sim_id}/acamis/scenarios/furnace_instability")
     assert critical.status_code == 200
@@ -188,7 +237,7 @@ def test_model_gateway_verifies_connection_without_exposing_key(monkeypatch):
     assert disconnected.json()["model_gateway"]["configured"] is False
 
 
-def test_gemini_connection_replaces_retired_model_and_uses_interactions(monkeypatch):
+def test_gemini_connection_replaces_retired_model_and_uses_generate_content(monkeypatch):
     sim_id = create_running_tmt_simulation()
     requests = []
 
@@ -196,8 +245,9 @@ def test_gemini_connection_replaces_retired_model_and_uses_interactions(monkeypa
         requests.append((url, kwargs))
         if kwargs.get("method") == "POST":
             return {
-                "status": "completed",
-                "steps": [{"type": "model_output", "content": [{"type": "text", "text": "Residual risk is low."}]}],
+                "candidates": [
+                    {"content": {"parts": [{"text": "Residual risk is low."}]}}
+                ],
             }
         return {
             "models": [
@@ -215,7 +265,7 @@ def test_gemini_connection_replaces_retired_model_and_uses_interactions(monkeypa
     assert connected.status_code == 200
     gateway = connected.json()
     assert gateway["model"] == "gemini-3.6-flash"
-    assert gateway["transport"] == "INTERACTIONS"
+    assert gateway["transport"] == "GENERATE_CONTENT"
     assert gateway["available_models"] == ["gemini-3.6-flash"]
     assert "selected gemini-3.6-flash" in gateway["message"]
     assert "api_key" not in gateway
@@ -223,8 +273,9 @@ def test_gemini_connection_replaces_retired_model_and_uses_interactions(monkeypa
     reviewed = client.post(f"/api/simulations/{sim_id}/acamis/model/chat", json={"message": "Review recovery"})
     assert reviewed.status_code == 200
     assert reviewed.json()["reply"] == "Residual risk is low."
-    assert requests[-1][0].endswith("/interactions")
-    assert requests[-1][1]["payload"]["model"] == "gemini-3.6-flash"
-    assert requests[-1][1]["payload"]["store"] is False
-    assert "system_instruction" in requests[-1][1]["payload"]
-    assert "transient-secret" not in requests[-1][1]["payload"]["input"]
+    assert requests[-1][0].endswith("/models/gemini-3.6-flash:generateContent")
+    payload = requests[-1][1]["payload"]
+    assert payload["generationConfig"]["temperature"] == 0.2
+    assert "systemInstruction" in payload
+    assert "CONTEXT:" in payload["contents"][0]["parts"][0]["text"]
+    assert "transient-secret" not in payload["contents"][0]["parts"][0]["text"]

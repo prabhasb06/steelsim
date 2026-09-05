@@ -29,6 +29,7 @@ const nodeTypes = {
 };
 
 interface BlueprintCanvasProps {
+    focusRequest?: { nodeId: string; nonce: number } | null;
     isFocusMode: boolean;
     setIsFocusMode: (f: boolean) => void;
     isActive?: boolean;
@@ -46,6 +47,7 @@ const BlueprintCanvas = ({
     isActive = true,
     simState,
     snapshot,
+    focusRequest,
     events = [],
     onGraphChange,
     onValidationChange
@@ -66,6 +68,14 @@ const BlueprintCanvas = ({
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [issuesOpen, setIssuesOpen] = useState(true);
   const [notice, setNotice] = useState<{ message: string; error?: boolean } | null>(null);
+  useEffect(() => {
+    if (!isActive || !focusRequest) return;
+    const timer = window.setTimeout(() => {
+      setSelectedNodeId(focusRequest.nodeId);
+      void fitView({ nodes: [{ id: focusRequest.nodeId }], padding: 0.5, maxZoom: 1.2, duration: 400 });
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [focusRequest, isActive, fitView]);
 
   useEffect(() => {
     if (!notice) return;
@@ -875,7 +885,8 @@ Apply Setup?`;
       if (!telemetry) return node;
       return {
           ...node,
-          data: { ...node.data, liveTelemetry: telemetry, simulationStatus: telemetry.status }
+          data: { ...node.data, liveTelemetry: telemetry, simulationStatus: telemetry.status,
+            anomaly: snapshot?.acamis_impact?.state === 'ACTIVE' && snapshot.acamis_impact.equipment[node.id] ? snapshot.acamis_impact.scenario : null }
       };
   });
 

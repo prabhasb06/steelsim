@@ -4,6 +4,15 @@ import type { ValidationResult } from './types/topology';
 
 const apiKey = import.meta.env.VITE_STEELSIM_API_KEY?.trim();
 
+export class ApiError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 const encodeWebSocketToken = (value: string) => {
   const binary = Array.from(new TextEncoder().encode(value), byte => String.fromCharCode(byte)).join('');
   return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
@@ -15,7 +24,7 @@ export const apiRequest = async <T>(path: string, init?: RequestInit): Promise<T
   const response = await fetch(path, { ...init, headers });
   if (!response.ok) {
     const detail = await response.json().catch(() => null) as { detail?: string } | null;
-    throw new Error(detail?.detail ?? `Request failed (${response.status})`);
+    throw new ApiError(detail?.detail ?? `Request failed (${response.status})`, response.status);
   }
   return response.json() as Promise<T>;
 };

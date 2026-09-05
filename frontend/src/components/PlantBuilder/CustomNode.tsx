@@ -53,6 +53,7 @@ export const CustomNode = ({ data, selected }: NodeProps) => {
   const isLocked = !!data.locked;
   const liveTelemetry = data.liveTelemetry as NodeTelemetry | undefined;
   const isRunning = liveTelemetry?.status === 'RUNNING';
+  const anomaly = data.anomaly as string | null;
 
   return (
     <div className={`bg-industrial-800 border rounded-sm shadow-[0_4px_12px_rgba(0,0,0,0.5)] w-52 transition-colors relative ${isRunning ? 'border-emerald-500/70 shadow-[0_0_12px_rgba(16,185,129,0.15)]' : selected ? 'border-blue-500 bg-industrial-800/90 shadow-[0_0_0_1px_rgba(59,130,246,1)]' : 'border-industrial-700 hover:border-industrial-500'}`}>
@@ -63,6 +64,7 @@ export const CustomNode = ({ data, selected }: NodeProps) => {
           </div>
       )}
 
+      {anomaly && <div className="rounded-t border border-amber-400 bg-amber-950 px-3 py-1 text-[10px] font-bold text-amber-200">⚠ {anomaly.replaceAll('_', ' ')}</div>}
       {/* Node Header */}
       <div className="bg-industrial-900 px-3 py-2 border-b border-industrial-700 rounded-t-sm">
         <div className="flex justify-between items-center mb-0.5">

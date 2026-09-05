@@ -48,6 +48,13 @@ async def get_acamis_status(sim_id: str):
 async def reset_scenario(sim_id: str):
     return service.clear_scenario(_simulation(sim_id))
 
+@router.post("/monitoring/demo")
+async def start_monitoring_demo(sim_id: str):
+    try:
+        return service.start_telemetry_demo(_simulation(sim_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
 @router.post("/scenarios/{scenario}")
 async def inject_scenario(sim_id: str, scenario: str):
     try:

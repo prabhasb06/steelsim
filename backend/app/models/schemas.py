@@ -83,6 +83,8 @@ class SimulationSnapshot(BaseModel):
     state_version: int = 0
     seed: int
     system_health: str = "NORMAL"
+    acamis_impact: Dict[str, Any] | None = None
+    expected_throughput_tph: Dict[str, float] = Field(default_factory=dict)
     node_telemetry: Dict[str, NodeTelemetry] = Field(default_factory=dict)
     plant_summary: PlantSummary = Field(default_factory=PlantSummary)
     events: list[SimulationEvent] = Field(default_factory=list)

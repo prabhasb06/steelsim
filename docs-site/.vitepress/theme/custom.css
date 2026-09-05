@@ -1,0 +1,280 @@
+/* -------------------------------------------------------------
+   OpenAI Developer Documentation Theme Specification
+   Pure Minimalist Monochromatic Editorial Style
+   ------------------------------------------------------------- */
+
+:root {
+  --vp-font-family-base: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+  --vp-font-family-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+
+  /* OpenAI Core Palette */
+  --vp-c-brand-1: #10A37F;
+  --vp-c-brand-2: #0E906F;
+  --vp-c-brand-3: #0B7358;
+  --vp-c-brand-soft: rgba(16, 163, 127, 0.08);
+
+  /* Light Surface (Clean White / Slate) */
+  --vp-c-bg: #FFFFFF;
+  --vp-c-bg-alt: #F9FAFB;
+  --vp-c-bg-elv: #FFFFFF;
+  --vp-c-bg-soft: #F9FAFB;
+  --vp-c-bg-mute: #F3F4F6;
+
+  /* Crisp 1px Borders */
+  --vp-c-border: #E5E7EB;
+  --vp-c-divider: #E5E7EB;
+  --vp-c-gutter: #E5E7EB;
+
+  /* High-Contrast Neutral Typography */
+  --vp-c-text-1: #111827;
+  --vp-c-text-2: #4B5563;
+  --vp-c-text-3: #9CA3AF;
+
+  /* Restrained State Colors */
+  --vp-c-warning-1: #D97706;
+  --vp-c-warning-soft: rgba(217, 119, 6, 0.08);
+  --vp-c-danger-1: #DC2626;
+  --vp-c-danger-soft: rgba(220, 38, 38, 0.08);
+
+  /* Max Reading Width */
+  --vp-content-max-width: 800px;
+  --vp-layout-max-width: 1400px;
+}
+
+.dark {
+  /* OpenAI Dark Mode (#0D0D0D / #171717 / #262626) */
+  --vp-c-brand-1: #10A37F;
+  --vp-c-brand-2: #1CD6A4;
+  --vp-c-brand-3: #0E906F;
+  --vp-c-brand-soft: rgba(16, 163, 127, 0.15);
+
+  --vp-c-bg: #0D0D0D;
+  --vp-c-bg-alt: #171717;
+  --vp-c-bg-elv: #171717;
+  --vp-c-bg-soft: #171717;
+  --vp-c-bg-mute: #212121;
+
+  --vp-c-border: #262626;
+  --vp-c-divider: #262626;
+  --vp-c-gutter: #262626;
+
+  --vp-c-text-1: #F3F4F6;
+  --vp-c-text-2: #9CA3AF;
+  --vp-c-text-3: #6B7280;
+
+  --vp-c-warning-1: #F59E0B;
+  --vp-c-warning-soft: rgba(245, 158, 11, 0.12);
+  --vp-c-danger-1: #EF4444;
+  --vp-c-danger-soft: rgba(239, 68, 68, 0.12);
+}
+
+/* Global resets: Remove fancy gradients and excessive shadows */
+*, *::before, *::after {
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+/* Document Typography */
+.vp-doc h1 {
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  margin-bottom: 16px;
+  color: var(--vp-c-text-1);
+}
+
+.vp-doc h2 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  margin-top: 36px;
+  margin-bottom: 14px;
+  border-top: 1px solid var(--vp-c-border);
+  padding-top: 24px;
+  color: var(--vp-c-text-1);
+}
+
+.vp-doc h3 {
+  font-size: 17px;
+  font-weight: 600;
+  margin-top: 24px;
+  margin-bottom: 10px;
+  color: var(--vp-c-text-1);
+}
+
+.vp-doc p {
+  font-size: 15px;
+  line-height: 1.65;
+  margin-bottom: 16px;
+  color: var(--vp-c-text-1);
+}
+
+.vp-doc ul, .vp-doc ol {
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+/* Inline Code */
+.vp-doc :not(pre) > code {
+  font-family: var(--vp-font-family-mono);
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: var(--vp-c-bg-mute);
+  border: 1px solid var(--vp-c-border);
+  color: var(--vp-c-text-1);
+}
+
+/* Code Blocks */
+.vp-doc div[class*='language-'] {
+  border-radius: 6px;
+  border: 1px solid var(--vp-c-border);
+  background-color: #0F172A !important;
+  margin: 20px 0;
+}
+
+.dark .vp-doc div[class*='language-'] {
+  border: 1px solid #27272A;
+  background-color: #0A0A0A !important;
+}
+
+/* Clean Tables (OpenAI style) */
+.vp-doc table {
+  width: 100%;
+  display: table;
+  margin: 24px 0;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  border: 1px solid var(--vp-c-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.vp-doc th {
+  background-color: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--vp-c-border);
+  border-right: 1px solid var(--vp-c-border);
+  text-align: left;
+}
+
+.vp-doc td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--vp-c-border);
+  border-right: 1px solid var(--vp-c-border);
+  color: var(--vp-c-text-1);
+}
+
+.vp-doc tr:last-child td {
+  border-bottom: none;
+}
+
+.vp-doc td:last-child, .vp-doc th:last-child {
+  border-right: none;
+}
+
+/* Minimalist Callout Cards (OpenAI style) */
+.custom-block {
+  border: 1px solid var(--vp-c-border) !important;
+  background-color: var(--vp-c-bg-soft) !important;
+  border-radius: 4px !important;
+  padding: 14px 18px !important;
+  margin: 20px 0 !important;
+}
+
+.custom-block.tip,
+.custom-block.info {
+  border-left: 3px solid var(--vp-c-brand-1) !important;
+}
+
+.custom-block.warning {
+  border-left: 3px solid var(--vp-c-warning-1) !important;
+}
+
+.custom-block.danger {
+  border-left: 3px solid var(--vp-c-danger-1) !important;
+}
+
+.custom-block-title {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+  margin-bottom: 6px !important;
+}
+
+/* OpenAI Cards Grid for Index / Overview */
+.openai-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  margin: 24px 0;
+}
+
+.openai-card {
+  display: block;
+  border: 1px solid var(--vp-c-border);
+  background-color: var(--vp-c-bg);
+  border-radius: 6px;
+  padding: 16px 20px;
+  text-decoration: none !important;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.openai-card:hover {
+  border-color: var(--vp-c-brand-1);
+  background-color: var(--vp-c-bg-soft);
+}
+
+.openai-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+  margin-bottom: 6px;
+}
+
+.openai-card-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--vp-c-text-2);
+}
+
+/* Sidebar & Navigation: Crisp and clean */
+.VPSidebar {
+  border-right: 1px solid var(--vp-c-border) !important;
+}
+
+.VPSidebarItem.level-0 > .item > .text {
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  color: var(--vp-c-text-2) !important;
+}
+
+.VPSidebarItem.level-1 > .item > .text {
+  font-size: 13.5px !important;
+}
+
+.VPNavBar {
+  border-bottom: 1px solid var(--vp-c-border) !important;
+}
+
+/* Mermaid Diagrams Container */
+pre.mermaid, .mermaid-wrapper {
+  background: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-border);
+  border-radius: 6px;
+  padding: 20px;
+  margin: 20px 0;
+  overflow-x: auto;
+  display: flex;
+  justify-content: center;
+}

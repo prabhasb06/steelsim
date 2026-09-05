@@ -35,6 +35,12 @@ class SteelSimEngine:
         self.acamis_mitigations: set[str] = set()
         self.acamis_audit: list[dict] = []
         self.acamis_last_resolution: dict | None = None
+        self.acamis_recovery_tick: int | None = None
+        self.acamis_impact: dict | None = None
+        from app.acamis import detector
+        detector.reset(self)
+        self.rolling_disturbance: dict[str, float] = {}
+        self.expected_telemetry: dict = {}
         self.acamis_model_config: dict | None = None
         self.acamis_last_model_advisory: dict | None = None
         
@@ -61,8 +67,19 @@ class SteelSimEngine:
             f"Simulation {self.id} created with seed {self.seed}"
         )
 
-    def _calculate_telemetry(self):
+    def _calculate_telemetry(self, *, baseline_only=False):
         """Calculate deterministic per-node telemetry and plant-wide summary."""
+        previous_impact = self.acamis_impact
+        baseline = None
+        if not baseline_only:
+            scenario, mitigations = self.acamis_scenario, self.acamis_mitigations
+            try:
+                self.acamis_scenario, self.acamis_mitigations = None, set()
+                self._calculate_telemetry(baseline_only=True)
+                baseline = self.node_telemetry
+                self.expected_telemetry = baseline
+            finally:
+                self.acamis_scenario, self.acamis_mitigations = scenario, mitigations
         is_running = self.status == SimulationStatus.RUNNING
         phase = self.tick % 60
         load_factor = 0.92 + ((phase % 7) * 0.02) if is_running else 0.0
@@ -202,6 +219,8 @@ class SteelSimEngine:
                 for port in n.ports
             )
             rated_rate = node_telemetry["rated_throughput_tph"] * load_factor
+            if not baseline_only:
+                rated_rate *= self.rolling_disturbance.get(n.id, 1.0)
             if self.acamis_scenario == "rolling_mill_slowdown" and "MILL" in n.component_class.value:
                 rated_rate *= 0.45
             if self.acamis_scenario == "raw_material_disruption" and not has_material_input:
@@ -248,6 +267,23 @@ class SteelSimEngine:
         interlocked_count = sum(1 for item in telemetry.values() if item["status"] == "INTERLOCKED")
 
         self.node_telemetry = telemetry
+        if not baseline_only:
+            self.acamis_impact = None
+            if baseline is not None and self.acamis_scenario:
+                metrics = ("throughput_tph", "temperature_c", "power_mw", "water_m3h")
+                changes = {
+                    node_id: {key: {"baseline": baseline[node_id][key], "actual": values[key]}
+                              for key in metrics if values[key] != baseline[node_id][key]}
+                    for node_id, values in telemetry.items()
+                }
+                self.acamis_impact = {
+                    "scenario": self.acamis_scenario, "state": "ACTIVE", "tick": self.tick,
+                    "origin": "Telemetry detector" if self.acamis_scenario == "telemetry_rolling_throughput_deviation" else "Manual scenario",
+                    "recovery_tick": self.acamis_recovery_tick,
+                    "equipment": {node_id: values for node_id, values in changes.items() if values},
+                }
+                if self.status == SimulationStatus.PAUSED and previous_impact:
+                    self.acamis_impact = {**previous_impact, "recovery_tick": self.acamis_recovery_tick}
         self.plant_summary = {
             "total_power_kw": round(total_power, 1),
             "total_power_mw": round(total_power / 1000.0, 2),
@@ -329,6 +365,8 @@ class SteelSimEngine:
             state_version=self.state_version,
             seed=self.seed,
             system_health="INCIDENT" if self.acamis_scenario else ("DEGRADED" if self.plant_summary["interlocked_nodes"] else "NORMAL"),
+            acamis_impact=self.acamis_impact or (self.acamis_last_resolution or {}).get("impact"),
+            expected_throughput_tph={key: value["throughput_tph"] for key, value in self.expected_telemetry.items()},
             node_telemetry=self.node_telemetry,
             plant_summary=self.plant_summary,
             events=self.events[-50:]  # Last 50 events for quick access
@@ -372,6 +410,10 @@ class SteelSimEngine:
         self.speed = "1x"
         self.rng = random.Random(self.seed)
         self.acamis_scenario = None
+        from app.acamis import detector
+        detector.reset(self)
+        self.rolling_disturbance.clear()
+        self.acamis_recovery_tick = None
         self.acamis_mitigations.clear()
         self.acamis_audit.clear()
         self.acamis_last_resolution = None
@@ -384,7 +426,12 @@ class SteelSimEngine:
         self._state_changed()
 
     def inject_acamis_scenario(self, scenario: str):
+        from app.acamis import detector
+        detector.reset(self)
+        self.rolling_disturbance.clear()
         self.acamis_scenario = scenario
+        self.acamis_recovery_tick = None
+        self.acamis_last_model_advisory = None
         self.acamis_last_resolution = None
         self.acamis_mitigations.clear()
         self._calculate_telemetry()
@@ -393,6 +440,7 @@ class SteelSimEngine:
 
     def clear_acamis_scenario(self):
         self.acamis_scenario = None
+        self.acamis_recovery_tick = None
         self.acamis_mitigations.clear()
         self._calculate_telemetry()
         self._add_event(EventType.ACAMIS_SCENARIO_CLEARED, EventSeverity.INFO, "ACAMIS Scenario Control", "Cleared ACAMIS scenario and mitigations")
@@ -433,6 +481,10 @@ class SteelSimEngine:
                 self.elapsed_seconds += self._tick_step
                 self.current_time += timedelta(seconds=self._tick_step)
                 self._calculate_telemetry()
+                from app.acamis.detector import evaluate
+                evaluate(self)
+                from app.acamis.service import advance_recovery
+                advance_recovery(self)
                 self._state_changed()
                 
                 # Sleep to match real-time

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from app.acamis import model_gateway
+from app.acamis import detector
 
 SCENARIOS: dict[str, dict[str, Any]] = {
     "cooling_water_degradation": {"title": "Cooling-water degradation", "severity": "HIGH", "summary": "Cooling capacity has fallen below the process demand envelope.", "procedures": ["activate_standby_cooling", "reduce_heat_load"], "containment": "reduce_heat_load", "resolution": "activate_standby_cooling"},
@@ -13,6 +15,8 @@ SCENARIOS: dict[str, dict[str, Any]] = {
     "raw_material_disruption": {"title": "Raw-material supply disruption", "severity": "WARNING", "summary": "Incoming material availability is constraining the production chain.", "procedures": ["pace_upstream_material", "review_material_plan"], "resolution": "review_material_plan"},
 }
 DOMAINS = ("Safety", "Maintenance", "Quality", "Production", "Energy", "Logistics")
+MANUAL_SCENARIOS = frozenset(SCENARIOS)
+SCENARIOS[detector.INCIDENT] = {**SCENARIOS["rolling_mill_slowdown"], "title": "Rolling throughput deviation", "summary": "Measured rolling throughput remained more than 25% below its expected baseline for three running ticks."}
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -20,19 +24,12 @@ def _now() -> str:
 def _audit(sim: Any, event: str, detail: str, severity: str = "INFO") -> None:
     if not hasattr(sim, "acamis_audit"):
         sim.acamis_audit = []
-    sim.acamis_audit.append({"id": f"acamis-{len(sim.acamis_audit) + 1}", "at": _now(), "event": event, "detail": detail, "severity": severity, "state_version": sim.state_version})
+    sim.acamis_audit.append({"id": f"acamis-{uuid4().hex}", "at": _now(), "event": event, "detail": detail, "severity": severity, "state_version": sim.state_version})
     del sim.acamis_audit[:-200]
 
 def _affected_equipment(sim: Any) -> list[str]:
-    scenario = getattr(sim, "acamis_scenario", None)
-    matching = {
-        "cooling_water_degradation": ("WATER", "COOLING", "TMT", "ROLLING", "FURNACE"),
-        "furnace_instability": ("FURNACE", "INDUCTION", "LADLE"),
-        "rolling_mill_slowdown": ("ROLLING", "MILL", "TMT", "COOLING"),
-        "substation_capacity_constraint": ("SUBSTATION", "TRANSFORMER", "FURNACE", "MILL"),
-        "raw_material_disruption": ("RAW", "YARD", "STORAGE", "CHARGING"),
-    }.get(scenario, ())
-    return [node.id for node in sim.config.plant.nodes if any(token in node.component_class.value or token in node.name.upper() for token in matching)][:6]
+    return list(dict.fromkeys([*list((sim.acamis_impact or {}).get("equipment", {})),
+                              *([item["equipment_id"] for item in sim.rolling_monitor["evidence"]] if sim.acamis_scenario == detector.INCIDENT else [])]))
 
 def _finding(domain: str, scenario: str | None, severity: str, affected: list[str]) -> dict[str, Any]:
     if not scenario:
@@ -55,6 +52,9 @@ def status(sim: Any) -> dict[str, Any]:
     affected = _affected_equipment(sim)
     severity = definition["severity"] if definition else "INFO"
     findings = [_finding(domain, scenario, severity, affected) for domain in DOMAINS]
+    if scenario == detector.INCIDENT:
+        for finding in findings:
+            finding["evidence"] = [f"Measured {item['actual_tph']} t/h versus expected {item['expected_tph']} t/h; {item['deviation_percent']}% deviation persisted {item['persistence_count']} ticks." for item in sim.rolling_monitor["evidence"]]
     escalation = any(item["escalation_required"] for item in findings)
     contained = bool(definition and definition.get("containment") in getattr(sim, "acamis_mitigations", set()))
     procedure_statuses: dict[str, str] = {}
@@ -71,7 +71,10 @@ def status(sim: Any) -> dict[str, Any]:
         "operating_mode": getattr(sim, "acamis_autonomy", "OBSERVE"), "plant_health": "STABILIZED" if contained else ("INCIDENT" if scenario else ("DEGRADED" if sim.plant_summary["interlocked_nodes"] else "NORMAL")),
         "incident": None if not definition else {"id": scenario, "title": definition["title"], "severity": severity, "summary": definition["summary"], "affected_equipment": affected, "verified": True, "contained": contained},
         "specialist_findings": findings,
-        "recovery_plan": {"status": "HUMAN_VERIFICATION_REQUIRED" if escalation else ("READY" if scenario else "RECOVERED" if getattr(sim, "acamis_last_resolution", None) else "MONITORING"), "priority_order": ["Safety", "Equipment limits", "Quality", "Maintenance", "Production", "Energy", "Logistics"], "recommended_procedures": definition["procedures"] if definition else [], "procedure_statuses": procedure_statuses, "rationale": "Safe containment is automatic. Final high-risk repairs require an operator; low-risk incidents recover automatically."},
+        "automatic_monitoring": detector.public_status(sim),
+        "incident_origin": "Telemetry detector" if scenario == detector.INCIDENT else "Manual scenario" if scenario else None,
+        "incident_evidence": sim.rolling_monitor["evidence"] if scenario == detector.INCIDENT else [],
+        "recovery_plan": {"status": "HUMAN_VERIFICATION_REQUIRED" if escalation else ("RECOVERING" if sim.acamis_recovery_tick is not None else "READY" if scenario else "RECOVERED" if getattr(sim, "acamis_last_resolution", None) else "MONITORING"), "priority_order": ["Safety", "Equipment limits", "Quality", "Maintenance", "Production", "Energy", "Logistics"], "recommended_procedures": definition["procedures"] if definition else [], "procedure_statuses": procedure_statuses, "rationale": "In autonomous mode, safe containment is automatic. Final high-risk repairs require an operator; low-risk simulated recovery advances with the simulation clock."},
         "model_gateway": model_gateway.public_status(sim),
         "model_advisory": getattr(sim, "acamis_last_model_advisory", None),
         "context_manifest": {"ruleset": "acamis-simulation-policy.v1", "snapshot_contract": "acamis.v1", "domains": list(DOMAINS), "approved_procedures_only": True},
@@ -79,10 +82,34 @@ def status(sim: Any) -> dict[str, Any]:
     }
 
 def _resolve_incident(sim: Any, scenario: str, procedure: str, autonomous: bool) -> None:
+    if scenario == detector.INCIDENT and sim.status.value != "RUNNING":
+        raise ValueError("Resume the simulation before applying recovery so live throughput can be verified")
+    recorded_impact = sim.acamis_impact
+    if scenario == detector.INCIDENT:
+        sim.rolling_disturbance.clear()
     sim.apply_acamis_procedure(procedure)
+    if scenario == detector.INCIDENT:
+        from math import isfinite
+        def recovered_reading(item):
+            actual = sim.node_telemetry.get(item["equipment_id"], {}).get("throughput_tph")
+            expected = sim.expected_telemetry.get(item["equipment_id"], {}).get("throughput_tph")
+            return (actual is not None and expected is not None and isfinite(actual)
+                    and isfinite(expected) and expected > 0 and actual >= expected * detector.LIMIT)
+        unresolved = not sim.rolling_monitor["evidence"] or not all(recovered_reading(item) for item in sim.rolling_monitor["evidence"])
+        if unresolved:
+            sim.acamis_recovery_tick = None
+            sim.rolling_monitor["state"] = "Detected"
+            sim._calculate_telemetry()
+            sim._state_changed()
+            _audit(sim, "RECOVERY_VERIFICATION_FAILED", "Throughput remains below the monitored range after simulated inspection; incident remains open.", "WARNING")
+            return
     _audit(sim, "AUTONOMOUS_PROCEDURE_EXECUTED" if autonomous else "PROCEDURE_EXECUTED", f"Applied simulated recovery procedure: {procedure}.")
-    sim.acamis_last_resolution = {"scenario": scenario, "procedure": procedure, "at": _now()}
+    impact = {**(recorded_impact or {}), "state": "RECOVERED"}
+    sim.acamis_last_resolution = {"scenario": scenario, "procedure": procedure, "at": _now(), "impact": impact}
     sim.clear_acamis_scenario()
+    if scenario == detector.INCIDENT:
+        sim.rolling_monitor["state"] = "Recovered"
+        sim.rolling_monitor["samples"] = {}
     _audit(sim, "INCIDENT_RECOVERED", f"Verified recovery from {SCENARIOS[scenario]['title']}; plant returned to its operating envelope.")
 
 def _run_autonomous_response(sim: Any) -> None:
@@ -91,8 +118,12 @@ def _run_autonomous_response(sim: Any) -> None:
         return
     definition = SCENARIOS[scenario]
     assessment = status(sim)
-    if assessment["recovery_plan"]["status"] == "READY":
-        _resolve_incident(sim, scenario, definition["resolution"], autonomous=True)
+    if assessment["recovery_plan"]["status"] in {"READY", "RECOVERING"}:
+        if sim.acamis_recovery_tick is None:
+            sim.acamis_recovery_tick = sim.tick + 12
+            sim._calculate_telemetry()
+            sim._state_changed()
+            _audit(sim, "AUTONOMOUS_RECOVERY_SCHEDULED", "Simulated inspection and recovery scheduled after 12 running simulation ticks; pause freezes this procedure.")
         return
     containment = definition.get("containment")
     if containment and containment not in sim.acamis_mitigations:
@@ -100,17 +131,29 @@ def _run_autonomous_response(sim: Any) -> None:
         _audit(sim, "AUTONOMOUS_CONTAINMENT_EXECUTED", f"ACAMIS safely contained the incident with: {containment}.", "WARNING")
     _audit(sim, "HUMAN_VERIFICATION_REQUESTED", "The plant is stabilized. Human verification is required for the final high-risk repair.", "HIGH")
 
+def advance_recovery(sim: Any) -> None:
+    """Advance approved low-risk simulated work only with the simulation clock."""
+    if (sim.status.value == "RUNNING" and sim.acamis_autonomy == "AUTONOMOUS_SIMULATION"
+            and sim.acamis_scenario and sim.acamis_recovery_tick is not None
+            and sim.tick >= sim.acamis_recovery_tick):
+        scenario = sim.acamis_scenario
+        _resolve_incident(sim, scenario, SCENARIOS[scenario]["resolution"], autonomous=True)
+
 def inject_scenario(sim: Any, scenario: str) -> dict[str, Any]:
-    if scenario not in SCENARIOS:
+    if scenario not in MANUAL_SCENARIOS:
         raise ValueError("Unknown ACAMIS scenario")
+    if sim.status.value != "RUNNING":
+        raise ValueError("Run or resume the simulation before injecting a scenario so its telemetry effects are visible.")
     sim.inject_acamis_scenario(scenario)
     _audit(sim, "SCENARIO_INJECTED", SCENARIOS[scenario]["title"], SCENARIOS[scenario]["severity"])
     _run_autonomous_response(sim)
     return status(sim)
 
 def clear_scenario(sim: Any) -> dict[str, Any]:
-    sim.clear_acamis_scenario()
+    detector.reset(sim)
+    sim.rolling_disturbance.clear()
     sim.acamis_last_resolution = None
+    sim.clear_acamis_scenario()
     _audit(sim, "SCENARIO_CLEARED", "Scenario cleared and simulation baseline restored.")
     return status(sim)
 
@@ -118,14 +161,34 @@ def set_autonomy(sim: Any, mode: str) -> dict[str, Any]:
     if mode not in {"OBSERVE", "ADVISORY", "AUTONOMOUS_SIMULATION"}:
         raise ValueError("Invalid ACAMIS operating mode")
     sim.acamis_autonomy = mode
+    if mode != "AUTONOMOUS_SIMULATION":
+        sim.acamis_recovery_tick = None
+        sim._calculate_telemetry()
+        sim._state_changed()
     _audit(sim, "AUTONOMY_MODE_CHANGED", f"ACAMIS operating mode set to {mode}.")
     _run_autonomous_response(sim)
+    return status(sim)
+
+def start_telemetry_demo(sim: Any) -> dict[str, Any]:
+    if sim.status.value != "RUNNING" or sim.acamis_scenario or sim.rolling_disturbance:
+        raise ValueError("Run the simulation and clear the current incident or disturbance first.")
+    mills = [node.id for node in sim.config.plant.nodes if node.component_class.value in detector.MILLS]
+    if not mills:
+        raise ValueError("This plant has no rolling-mill equipment.")
+    detector.reset(sim)
+    sim.acamis_last_resolution = None
+    sim.rolling_disturbance[mills[0]] = 0.5
+    sim._calculate_telemetry()
+    _audit(sim, "TELEMETRY_DEMO_STARTED", "Applied 50% rolling capacity disturbance; the monitor must independently detect its measured effect.")
+    sim._state_changed()
     return status(sim)
 
 def execute_procedure(sim: Any, procedure: str, *, human_verified: bool = False) -> dict[str, Any]:
     valid = {name for item in SCENARIOS.values() for name in item["procedures"]}
     if procedure not in valid:
         raise ValueError("Procedure is not registered in the ACAMIS library")
+    if not sim.acamis_scenario or procedure not in SCENARIOS[sim.acamis_scenario]["procedures"]:
+        raise ValueError("Procedure does not belong to the active incident")
     if getattr(sim, "acamis_autonomy", "OBSERVE") == "OBSERVE":
         raise ValueError("Set ACAMIS to Advisory or Autonomous Simulation before applying a procedure")
     assessment = status(sim)
