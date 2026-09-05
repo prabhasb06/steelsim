@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { LayoutDashboard, Factory, Activity, Truck, Wrench, Shield, Zap, Cpu, Play, Pause, RotateCcw, ArrowRight, CheckCircle2, AlertTriangle, Clock3, BookOpenText, ExternalLink } from 'lucide-react';
+import { LayoutDashboard, Factory, Activity, Truck, Wrench, Shield, Zap, Cpu, Play, Pause, RotateCcw, ArrowRight, CheckCircle2, AlertTriangle, Clock3, BookOpenText, ExternalLink, Monitor } from 'lucide-react';
 import { Blueprint } from './components/PlantBuilder/Blueprint';
 import { ApiError, simulationApi } from './api';
 import { AcamisConsole } from './components/AcamisConsole';
@@ -224,7 +224,9 @@ function App() {
   const currentSpeed = snapshot?.speed || simState?.speed || '1x';
 
   return (
-    <div className="flex h-screen w-full bg-industrial-900 text-gray-300 overflow-hidden font-sans selection:bg-blue-900 selection:text-blue-100">
+    <>
+      <DesktopRequired />
+      <div className="hidden h-screen w-full overflow-hidden bg-industrial-900 font-sans text-gray-300 selection:bg-blue-900 selection:text-blue-100 lg:flex">
       
       {/* LEFT NAV */}
       {!isFocusMode && (
@@ -250,21 +252,23 @@ function App() {
           <NavItem icon={<Shield />} label="Safety limits" disabled collapsed={sidebarCollapsed} />
           <NavItem icon={<Truck />} label="Logistics" disabled collapsed={sidebarCollapsed} />
         </div>
-        <a
-          href={STEELSIM_DOCS_URL}
-          target="_blank"
-          rel="noreferrer"
-          aria-label="Inside SteelSim — open the engineering reference"
-          title={sidebarCollapsed ? 'Inside SteelSim' : undefined}
-          className="group mx-2 mb-3 flex items-center gap-3 rounded-md border border-cyan-950 bg-cyan-950/20 px-3 py-2.5 text-cyan-200 transition-colors hover:border-cyan-800 hover:bg-cyan-950/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
-        >
-          <BookOpenText className="h-4 w-4 flex-none text-cyan-400" />
-          <span className={`min-w-0 flex-1 ${sidebarCollapsed ? 'hidden' : 'hidden md:block'}`}>
-            <span className="block text-[11px] font-bold">Inside SteelSim</span>
-            <span className="block truncate font-mono text-[8px] uppercase tracking-wider text-gray-500">Engineering reference</span>
-          </span>
-          {!sidebarCollapsed && <ExternalLink className="hidden h-3 w-3 flex-none text-gray-600 transition-colors group-hover:text-cyan-300 md:block" />}
-        </a>
+        <div className="mx-3 border-t border-industrial-700 py-3">
+          <a
+            href={STEELSIM_DOCS_URL}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Inside SteelSim — open the engineering reference"
+            title={sidebarCollapsed ? 'Inside SteelSim' : undefined}
+            className="group flex items-center gap-3 rounded px-2 py-2 text-gray-400 transition-colors hover:bg-industrial-700/70 hover:text-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          >
+            <BookOpenText className="h-4 w-4 flex-none text-blue-400/80 transition-colors group-hover:text-blue-300" />
+            <span className={`min-w-0 flex-1 ${sidebarCollapsed ? 'hidden' : 'hidden md:block'}`}>
+              <span className="block text-xs font-medium">Inside SteelSim</span>
+              <span className="mt-0.5 block truncate text-[9px] text-gray-600 group-hover:text-gray-500">Architecture and engineering</span>
+            </span>
+            {!sidebarCollapsed && <ExternalLink className="hidden h-3 w-3 flex-none text-gray-600 transition-colors group-hover:text-gray-400 md:block" />}
+          </a>
+        </div>
       </div>
       )}
 
@@ -439,7 +443,38 @@ function App() {
           )}
         </div>
       </div>
-    </div>
+      </div>
+    </>
+  );
+}
+
+function DesktopRequired() {
+  return (
+    <main className="desktop-required flex min-h-screen items-center justify-center overflow-hidden px-5 py-10 lg:hidden" aria-label="Desktop display required">
+      <section className="relative z-10 w-full max-w-md rounded-xl border border-industrial-600 bg-industrial-800/90 p-6 shadow-2xl backdrop-blur-sm sm:p-8">
+        <div className="flex h-11 w-11 items-center justify-center rounded-md border border-blue-900 bg-blue-950/40 text-blue-300">
+          <Monitor className="h-5 w-5" />
+        </div>
+        <div className="mt-6 font-mono text-[9px] font-bold uppercase tracking-[0.22em] text-blue-400">Display requirement · 1024 px minimum</div>
+        <h1 className="mt-3 text-2xl font-bold tracking-tight text-white">SteelSim requires a desktop workspace</h1>
+        <p className="mt-3 text-sm leading-6 text-gray-400">
+          The plant topology canvas, simulation controls, and ACAMIS operations console are designed for laptop and desktop displays. Open SteelSim on a larger screen for accurate plant engineering and operational visualization.
+        </p>
+        <div className="mt-6 border-t border-industrial-700 pt-5">
+          <p className="text-xs leading-5 text-gray-500">The engineering reference remains fully available on this device.</p>
+          <a
+            href={STEELSIM_DOCS_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="group mt-3 inline-flex items-center gap-2 rounded border border-industrial-600 bg-industrial-900 px-3.5 py-2.5 text-xs font-semibold text-gray-200 transition-colors hover:border-blue-700 hover:bg-industrial-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          >
+            <BookOpenText className="h-4 w-4 text-blue-400" />
+            Explore SteelSim Engineering
+            <ArrowRight className="h-3.5 w-3.5 text-gray-500 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-300" />
+          </a>
+        </div>
+      </section>
+    </main>
   );
 }
 

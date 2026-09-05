@@ -65,6 +65,27 @@ body {
   transform: translateX(-18%);
 }
 
+.desktop-required {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 50% 12%, rgba(37, 99, 235, 0.12), transparent 34%),
+    #1a1c1e;
+}
+
+.desktop-required::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  content: '';
+  background-image:
+    linear-gradient(rgba(96, 165, 250, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(96, 165, 250, 0.035) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(circle at center, black, transparent 72%);
+  pointer-events: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .engineering-discovery::after {
     transition: none;
