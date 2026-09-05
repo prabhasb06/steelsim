@@ -11,3 +11,13 @@ services:
         value: 3.11.9
       - key: STEELSIM_ALLOWED_ORIGINS
         value: "*"
+
+  - type: web
+    name: steelsim-docs
+    runtime: static
+    region: oregon
+    plan: free
+    rootDir: docs-site
+    buildCommand: npm install && npm run docs:build
+    staticPublishPath: .vitepress/dist
+
