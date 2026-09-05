@@ -4,16 +4,12 @@ During an active simulation run, the Plant Builder canvas doubles as a live oper
 
 ## On-card telemetry indicators
 
-```
-┌────────────────────────────────────────┐
-│ Medium Frequency Induction Furnace    │
-│ [RUNNING ●]                   1,620 °C │
-├────────────────────────────────────────┤
-│ Power Draw:   12,500 kW (12.50 MW)     │
-│ Cooling Flow: 120.0 m³/h               │
-│ Throughput:   25.0 t/h                 │
-└────────────────────────────────────────┘
-```
+| Equipment Node Card Header | Medium Frequency Induction Furnace (`RUNNING ●`) |
+| :--- | :--- |
+| **Operating Temperature** | `1,620 °C` (Thermal nominal envelope) |
+| **Active Power Draw** | `12,500 kW` ($12.50\text{ MW}$) |
+| **Cooling-Water Flow** | `120.0 m³/h` |
+| **Mass Throughput** | `25.0 t/h` |
 
 - **Operational status badge:**
   - `RUNNING:` Emerald badge with a pulsating green indicator dot.

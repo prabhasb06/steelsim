@@ -1,4 +1,4 @@
-# 30. Data models
+# 42. Data models
 
 All core entities in SteelSim are strictly modeled using Pydantic in the backend and matching TypeScript interfaces in the frontend.
 
@@ -50,3 +50,63 @@ interface EngineeringQuantity {
   display_name: string;
 }
 ```
+
+### 5. `SimulationSnapshot`
+Broadcast by WebSocket and returned by REST endpoints:
+```typescript
+interface SimulationSnapshot {
+  simulation_id: string;
+  state_version: number;
+  simulated_time_seconds: number;
+  tick_index: number;
+  node_telemetry: Record<string, NodeTelemetry>;
+  edge_telemetry: Record<string, EdgeTelemetry>;
+  plant_metrics: PlantMetrics;
+  active_alarms: PlantAlarm[];
+  expected_throughput_tph?: number | null;
+  acamis_impact?: AcamisImpactSummary | null;
+}
+```
+
+### 6. `AcamisStatusResponse`
+The authoritative payload representing the ACAMIS operational center state:
+```typescript
+interface AcamisStatusResponse {
+  current_evaluation: AcamisEvaluation | null;
+  active_incidents: IncidentRecord[];
+  incident_history: IncidentRecord[];
+  available_procedures: AutonomousProcedure[];
+  active_procedure: AutonomousProcedure | null;
+  execution_history: ProcedureExecutionRecord[];
+  operational_mode: 'OBSERVE' | 'ADVISORY' | 'AUTONOMOUS_SIMULATION';
+  safety_gate_active: boolean;
+  active_scenario: string | null;
+  telemetry_detector: TelemetryAnomalyRecord;
+}
+```
+
+### 7. `TelemetryAnomalyRecord` (Task 3.1)
+Authoritative anomaly detection telemetry state:
+```typescript
+interface TelemetryAnomalyRecord {
+  state: 'NORMAL' | 'WATCHING' | 'DETECTED' | 'RECOVERING' | 'RECOVERED';
+  consecutive_under_ticks: number;
+  actual_throughput_tph: number;
+  expected_throughput_tph: number;
+  evidence_payload: {
+    ratio: number;
+    threshold: number;
+    underperforming_nodes: string[];
+    affected_equipment: string[];
+    observed_ticks: number;
+    state_trace: Array<{
+      tick: number;
+      actual: number;
+      expected: number;
+    }>;
+  };
+  detected_at_tick: number | null;
+  incident_id: string | null;
+}
+```
+

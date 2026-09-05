@@ -1,4 +1,4 @@
-# 27. Equipment catalogue
+# 39. Equipment catalogue
 
 This catalogue details the complete library of components available in SteelSim (`backend/app/models/component_library.py`), including both baseline units and extended facility equipment.
 
@@ -29,3 +29,14 @@ This catalogue details the complete library of components available in SteelSim 
 | `WATER_PUMP` | Auxiliary Water Pump | `water_in`, `water_out`, `elec_in` | Flow: 100 m³/h, Power: 0.5 MW |
 | `COMPRESSOR` | Industrial Air Compressor | `elec_in`, `air_out` | Flow: 500 Nm³/h |
 | `BUFFER` | Intermediate Billet/Bar Buffer | `mat_in`, `mat_out` | Buffer Capacity: 20 t |
+
+## ACAMIS telemetry & scenario integration
+
+In Task 3, equipment telemetry is fed into the [ACAMIS evaluation pipeline](/task-3-acamis/architecture). Specific nodes are targeted during controlled incidents:
+- **`RAW_MATERIAL_STORAGE`:** Monitored by the Raw Material Specialist. Intercepted during `raw_material_disruption`.
+- **`INDUCTION_FURNACE`:** Monitored by the Thermal Specialist. Intercepted during `furnace_instability`.
+- **`CONTINUOUS_CASTING_MACHINE`:** Monitored by Casting & Metallurgy Specialists. Interlocked with upstream furnace delivery.
+- **`ROLLING_MILL`:** Monitored by the Mechanical Specialist. Intercepted during `rolling_mill_slowdown`.
+- **`UTILITY_SUBSTATION`:** Monitored by the Electrical Specialist. Intercepted during `substation_capacity_constraint`.
+- **`WATER_COOLING_SYSTEM`:** Monitored by the Utility Specialist. Intercepted during `cooling_water_degradation`.
+

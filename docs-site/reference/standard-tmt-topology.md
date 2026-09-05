@@ -1,4 +1,4 @@
-# 26. Standard TMT topology
+# 38. Standard TMT topology
 
 The standard SteelSim demo includes a verified, pre-configured 10-node industrial baseline representing a nominal 25 tonne-per-hour (t/h) MSME induction-furnace and continuous TMT rebar manufacturing line.
 
@@ -26,7 +26,18 @@ The 10-node topology includes 22 individual connection edges:
 
 ## Baseline operational profile
 
-- **Net plant power demand:** $approx 19.3	ext{ MW}$ (within the 25.0 MW substation capacity).
-- **Net plant cooling-water circulation:** $approx 465.0	ext{ m}^3	ext{/h}$ (within the 600.0 m³/h pumping station capacity).
-- **Net throughput:** $25.0	ext{ t/h}$ continuous finished rebar.
+- **Net plant power demand:** $\approx 19.3\text{ MW}$ (within the 25.0 MW substation capacity).
+- **Net plant cooling-water circulation:** $\approx 465.0\text{ m}^3\text{/h}$ (within the 600.0 m³/h pumping station capacity).
+- **Net throughput:** $25.0\text{ t/h}$ continuous finished rebar.
 - **Topology validation:** 0 Errors, 0 Warnings out of the box.
+
+## Operational integration with ACAMIS
+
+In Task 3, this standard 10-node topology serves as the operational substrate for all [ACAMIS scenario simulations](/task-3-acamis/scenario-control) and [automatic anomaly detection](/task-3-acamis/automatic-monitoring):
+1. **Cooling Water Degradation:** Affects Pump Station (`WATER_COOLING_SYSTEM`), throttling flow to nodes 2, 3, 4, 6, and 7.
+2. **Furnace Thermal Instability:** Induces operational spikes in the Induction Furnace (`INDUCTION_FURNACE`).
+3. **Rolling Mill Slowdown:** Induces downstream bottlenecks at node 6 (`ROLLING_MILL`).
+4. **Substation Capacity Constraint:** Limits power distribution from node 9 (`UTILITY_SUBSTATION`).
+5. **Raw Material Disruption:** Depletes feedstock feed from node 1 (`RAW_MATERIAL_STORAGE`).
+6. **Automatic Telemetry Anomaly Detection:** Monitors plant throughput against baseline $E_T = 25.0\text{ t/h}$, triggering automated containment when sustained $A_T < 18.75\text{ t/h}$.
+

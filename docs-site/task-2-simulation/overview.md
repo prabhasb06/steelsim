@@ -13,22 +13,24 @@ While Task 1 models the structural connectivity of the plant, Task 2 simulates i
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ SIMULATION CONTROL CENTER (React 19 Frontend)                               │
-│ • State: RUNNING (v142)  • Sim Time: 00:02:22  • Power: 24.2 MW             │
-│ • Controls: [Run] [Pause] [Reset] [Speed: 1x, 5x, 10x, 60x]                 │
-│ • Dynamic Process Flow Diagram & Utility Lane                               │
-│ • Live Equipment Cards, Inspector Drawer & State Trace Log                  │
-└──────────────────────────────────────▲──────────────────────────────────────┘
-                                       │
-                         WebSocket Stream / HTTP Polling
-                                       │
-┌──────────────────────────────────────┴──────────────────────────────────────┐
-│ DETERMINISTIC SIMULATION ENGINE (Python / FastAPI Backend)                  │
-│ • Discrete Tick Loop (1s Simulated Time / Tick)                             │
-│ • Topological Material Propagation (Bottleneck-Aware Flow)                  │
-│ • Utility Demand Summation & Over-Capacity Gating                           │
-│ • Cascade Equipment Interlocking & Ring-Buffered Event Journal              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+<pre class="mermaid">
+flowchart TB
+    subgraph Frontend ["Simulation Control Center (React 19 Frontend)"]
+        direction TB
+        StateHeader["Master Header: State, Version, Sim Time, Power Demand"]
+        ControlsBar["Controls: [Run] [Pause] [Reset] | Clock Speed Multipliers"]
+        PFD["Dynamic Process Flow Diagram (PFD) & Utility Corridor"]
+        Deck["Live Equipment Cards, Inspector Drawer & State Trace Log"]
+    end
+
+    subgraph Backend ["Deterministic Simulation Engine (FastAPI Backend)"]
+        direction TB
+        TickLoop["Discrete Tick Loop (1 Hz Discrete Clock)"]
+        FlowEngine["Topological Material Flow (Bottleneck-Aware)"]
+        UtilityEngine["Utility Demand Summation & Over-Capacity Gating"]
+        Interlocks["Cascade Equipment Interlocking & Ring Buffer Journal"]
+    end
+
+    Backend -->|"WebSocket Telemetry Stream / HTTP Polling"| Frontend
+    Frontend -->|"Unified Lifecycle Commands (POST /command)"| Backend
+</pre>

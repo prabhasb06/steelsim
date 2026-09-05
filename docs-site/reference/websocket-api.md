@@ -1,4 +1,4 @@
-# 29. WebSocket API
+# 41. WebSocket API
 
 The WebSocket API streams live, backend-authoritative telemetry snapshots directly to connected clients on every discrete simulation tick.
 
@@ -18,6 +18,17 @@ The WebSocket API streams live, backend-authoritative telemetry snapshots direct
    - `4401:` Invalid or missing API key.
    - `4404:` Simulation ID not found or evicted from memory.
 
+## ACAMIS telemetry payload extensions
+
+In Task 3, every broadcast `SimulationSnapshot` includes ACAMIS operational impact metadata:
+- `expected_throughput_tph` (`float | null`): Nominal baseline capacity calculated from active nodes ($25.0\text{ t/h}$ in standard TMT baseline).
+- `acamis_impact` (`AcamisImpactSummary | null`): Present during active incidents or scenarios, reporting:
+  - `active_scenario`: Identifier of active scenario (`cooling_water_degradation`, etc.) or `null`.
+  - `mitigation_in_progress`: Boolean flag indicating if autonomous or manual mitigation is active.
+  - `mitigation_procedure`: Identifier of executing procedure or `null`.
+  - `operational_mode`: Current autonomy mode (`OBSERVE`, `ADVISORY`, `AUTONOMOUS_SIMULATION`).
+  - `safety_gate_active`: Boolean flag indicating if a human approval safety gate is holding actions.
+
 ## Client message handler example
 
 ```typescript
@@ -29,6 +40,11 @@ socket.onmessage = (event) => {
   if (snapshot.state_version >= currentVersion) {
     currentVersion = snapshot.state_version;
     renderControlCenter(snapshot);
+    // Task 3: Render ACAMIS operational telemetry
+    if (snapshot.acamis_impact) {
+      renderAcamisOverlay(snapshot.acamis_impact);
+    }
   }
 };
 ```
+

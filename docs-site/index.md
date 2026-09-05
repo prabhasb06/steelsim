@@ -4,7 +4,7 @@ SteelSim is an industrial digital-twin MVP for MSME induction-furnace and TMT re
 
 > **Core tenet:** “SteelSim creates the factory; ACAMIS understands the factory.”
 >
-> SteelSim provides the verifiable plant-builder and deterministic physical simulation foundation. ACAMIS represents a separate future decision-support layer. SteelSim is an engineering demonstration and investor-facing MVP; it does not directly control physical machinery.
+> SteelSim provides the verifiable plant-builder and deterministic physical simulation foundation (Tasks 1 & 2). ACAMIS provides the operational intelligence, continuous telemetry anomaly detection, and policy-gated recovery layer (Tasks 3 & 3.1). SteelSim is an engineering digital twin and investor-facing MVP; it does not directly control physical machinery.
 
 ---
 
@@ -19,7 +19,7 @@ SteelSim is an industrial digital-twin MVP for MSME induction-furnace and TMT re
 
 <a href="/getting-started/investor-demo" class="openai-card">
   <div class="openai-card-title">Investor Demonstration</div>
-  <div class="openai-card-desc">Concise 5-minute timed demonstration script matching the 18-step verified browser E2E workflow.</div>
+  <div class="openai-card-desc">Concise 5-minute timed demonstration script matching the verified browser E2E workflow.</div>
 </a>
 
 <a href="/task-1-builder/overview" class="openai-card">
@@ -30,6 +30,11 @@ SteelSim is an industrial digital-twin MVP for MSME induction-furnace and TMT re
 <a href="/task-2-simulation/overview" class="openai-card">
   <div class="openai-card-title">Task 2: Simulation Engine</div>
   <div class="openai-card-desc">Deterministic tick loop, monotonic state versioning, mass flow, utility capacities, and interlocks.</div>
+</a>
+
+<a href="/task-3-acamis/overview" class="openai-card">
+  <div class="openai-card-title">Task 3: ACAMIS Intelligence</div>
+  <div class="openai-card-desc">Operational intelligence, 6 specialist domains, rolling throughput anomaly detection, and policy gates.</div>
 </a>
 
 <a href="/task-2-simulation/control-center" class="openai-card">
@@ -70,7 +75,7 @@ cd frontend
 npm run dev
 ```
 
-- **Frontend application:** `http://127.0.0.1:5173/`
+- **Frontend application:** `http://localhost:5173/`
 - **Backend API & docs:** `http://127.0.0.1:8000/docs`
 - **Backend health probe:** `http://127.0.0.1:8000/api/health`
 
@@ -80,24 +85,25 @@ npm run dev
 
 | Component | Target Metric | Verified Status |
 | :--- | :--- | :--- |
-| **Commit Hash** | `e1dad6ef603ee8975a8500ab33debb40d1697d46` | **Verified** (`main` clean) |
-| **Backend Tests** | 43 test cases | **43 / 43 Passed** (`pytest`) |
+| **Commit Hash** | `416cec95e3717c4081d689d9bd84329d30ffcba9` | **Verified** (`main` clean) |
+| **Backend Tests** | 72 test cases | **72 / 72 Passed** (`pytest backend/tests`) |
 | **Frontend Unit Tests** | 4 test cases | **4 / 4 Passed** (`node --test`) |
 | **Frontend Linter** | 0 warnings, 0 errors | **Passed** (`oxlint`) |
-| **TypeScript Compilation** | Strict type-check | **Passed** (`tsc -b`) |
-| **Production Build** | Vite bundle | **Passed** (`vite build`) |
-| **Browser E2E Workflow** | 18-step headless smoke test | **Passed** (0 console errors) |
+| **TypeScript Compilation** | Strict type-check | **Passed** (`tsc --noEmit`) |
+| **Task 3.1 Detector** | 3-tick persistence & recovery | **Verified** (100% test coverage) |
+| **Browser E2E Workflow** | Headless smoke test | **Passed** (0 console errors) |
 | **Standard Demo Topology** | 10 nodes, 22 connections | **Valid** (0 errors, 0 warnings) |
 
 ---
 
 ## System Architecture
 
-```mermaid
+<pre class="mermaid">
 graph TB
     subgraph Browser ["Client (React 19 / TypeScript)"]
         Builder["Plant Builder<br/>React Flow Canvas<br/>Typed Industrial Ports"]
         Control["Control Center<br/>Dynamic PFD<br/>Live KPI Summary"]
+        ACAMISUI["ACAMIS Console<br/>Monitoring & Plan<br/>Impact Deck & Chat"]
         Guard["Telemetry Guard<br/>Monotonic Version Check"]
     end
 
@@ -105,12 +111,16 @@ graph TB
         Validator["Topology Validator<br/>Port & Utility Checks"]
         SimManager["Simulation Manager<br/>Lifecycle State Machine"]
         Engine["Deterministic Engine<br/>Tick Loop (1s)<br/>Flow & Interlocks"]
+        ACAMISCore["ACAMIS Core<br/>Rolling Detector (Task 3.1)<br/>6 Specialist Evaluators<br/>Policy Gates & Audit"]
     end
 
     Builder -->|POST /api/plant/validate| Validator
     Builder -->|POST /api/simulations| SimManager
-    Control -->|POST /api/simulations/{id}/command| SimManager
+    Control -->|POST /api/simulations/:id/command| SimManager
+    ACAMISUI -->|REST API| ACAMISCore
     SimManager --> Engine
+    Engine --> ACAMISCore
     Engine -->|WebSocket Stream & HTTP Poll| Guard
     Guard --> Control
-```
+    Guard --> ACAMISUI
+</pre>

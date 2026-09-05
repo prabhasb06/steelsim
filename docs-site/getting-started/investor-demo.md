@@ -39,10 +39,15 @@ This structured, five-minute presentation script matches the verified end-to-end
 >
 > Look at the Process Flow Diagram: it is generated dynamically from the active graph. We see 24.2 MW total load, 980 m³/h cooling water, and 25 tonnes per hour throughput. I can select the Induction Furnace to inspect its 1,600°C melt temperature and 15 MW draw. If I pause, execution freezes deterministically. When I reset, we return cleanly to tick 0.”
 
-### 04:00 – 05:00 | Product vision & closing
-*[Action: Return to Plant Builder ➔ Click **Clear** ➔ Confirm simulation cleanup]*
-> “Clearing the canvas immediately retires the active simulation, demonstrating state integrity. This embodies our core architectural rule:
+### 04:00 – 05:00 | Operational intelligence & closing
+*[Action: Navigate to ACAMIS Operations Console ➔ Trigger Cooling Water Scenario ➔ Show autonomous mitigation]*
+> “With Task 3 and Task 3.1 completed, SteelSim doesn't just run the factory—ACAMIS actively protects and optimizes it.
 >
-> **'SteelSim creates the factory; ACAMIS understands the factory.'**
+> When a cooling pump fails or throughput drifts, ACAMIS's 8-stage evaluation pipeline detects the anomaly within three ticks, generates root-cause diagnostics, and either alerts the operator or autonomously throttles upstream melt rate to avert catastrophic equipment damage.
 >
-> SteelSim provides the verifiable physical twin. ACAMIS will sit above it as the cognitive layer for predictive maintenance and energy optimization. With all 43 backend tests passing and automated browser E2E verification, SteelSim is verified and investor-ready. Thank you.”
+> All 72 backend tests pass, frontend static analysis is zero-defect, and external Gemini advisory reasoning is securely isolated in transient memory. SteelSim and ACAMIS together provide a complete, investor-ready industrial operating twin. Thank you.”
+
+> [!TIP]
+> **Complete ACAMIS Demo Script:**
+> For the full timed script demonstrating autonomous mitigation, safety gates, automatic anomaly drift detection, and advisory LLM chat, see [36. ACAMIS Investor Demonstration Script](/task-3-acamis/investor-demo).
+

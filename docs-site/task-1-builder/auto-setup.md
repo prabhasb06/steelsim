@@ -6,20 +6,14 @@ Auto Setup is an atomic orchestration workflow that transforms a set of unlinked
 
 When an operator triggers **Auto Setup**, the system executes a three-phase pipeline:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    AUTO SETUP PIPELINE                      │
-├──────────────────────────────┬──────────────────────────────┤
-│ 1. Process Auto-Wiring       │ Connects material ports from │
-│                              │ Raw Yard through Cooling Bed │
-├──────────────────────────────┼──────────────────────────────┤
-│ 2. Utility Auto-Wiring       │ Wires Substation and Water   │
-│                              │ Station to all consumers     │
-├──────────────────────────────┼──────────────────────────────┤
-│ 3. Hierarchical Auto-Layout  │ Arranges nodes into process  │
-│                              │ and infrastructure lanes     │
-└──────────────────────────────┴──────────────────────────────┘
-```
+<pre class="mermaid">
+flowchart TD
+    Step1["1. Process Auto-Wiring<br/>Connects material ports linearly from Raw Yard through Cooling Bed"]
+    Step2["2. Utility Auto-Wiring<br/>Wires Substation and Water Station to all rated thermal and power consumers"]
+    Step3["3. Hierarchical Auto-Layout<br/>Arranges nodes into collision-free process and infrastructure lanes"]
+
+    Step1 --> Step2 --> Step3
+</pre>
 
 ## Atomic server proposal
 

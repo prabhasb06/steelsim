@@ -1,6 +1,6 @@
-# 40. MVP readiness
+# 52. MVP readiness
 
-SteelSim has completed all engineering milestones required for Task 1 and Task 2.
+SteelSim has completed all engineering milestones required for Task 1, Task 2, and Task 3/3.1.
 
 ## Verification checklist
 
@@ -15,11 +15,17 @@ SteelSim has completed all engineering milestones required for Task 1 and Task 2
 [x] Server-side safety gate blocking startup of invalid or unpowered plants.
 [x] Dynamic invalidation retiring obsolete simulations on physical graph edits.
 [x] Single-interface workspace preserving canvas state across route navigation.
-[x] 43 of 43 backend Pytest tests passing (100%).
+[x] ACAMIS Operational Intelligence (Task 3) active with 6 specialist domains.
+[x] Three operating modes: Observe, Advisory, and Autonomous Simulation.
+[x] Five controlled manual scenarios with safe containment and recovery procedures.
+[x] Task 3.1 automatic telemetry anomaly detector (rolling throughput with 3-tick persistence).
+[x] Mandatory human verification risk gates for severe furnace and cooling incidents.
+[x] BYOK Advisory Model Gateway supporting Google Gemini (:generateContent) and OpenAI.
+[x] 72 of 72 backend Pytest tests passing (100%).
 [x] 4 of 4 frontend unit tests passing (100%).
-[x] 0 linter errors or warnings across 17 files via Oxlint.
-[x] Clean TypeScript compilation and production Vite build.
-[x] 18-step headless Puppeteer browser E2E smoke test passing with zero console errors.
+[x] 0 linter errors or warnings across 20 files via Oxlint.
+[x] Clean TypeScript compilation (tsc --noEmit) and production Vite build.
+[x] Headless browser E2E smoke test passing with zero console errors.
 ```
 
 ## Final declaration

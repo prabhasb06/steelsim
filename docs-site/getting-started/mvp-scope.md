@@ -1,6 +1,6 @@
 # 3. MVP scope
 
-SteelSim is developed as a focused, investor-ready engineering demonstration. To preserve technical credibility, the scope of the current release (Task 1 and Task 2) is strictly demarcated from future roadmap items.
+SteelSim is developed as a focused, investor-ready engineering demonstration. To preserve technical credibility, the scope of the current release (Task 1 Plant Builder, Task 2 Simulation Control Center, and Task 3/3.1 ACAMIS Intelligence) is strictly demarcated from future industrial deployment items.
 
 ## Completed MVP capabilities
 
@@ -25,14 +25,23 @@ SteelSim is developed as a focused, investor-ready engineering demonstration. To
 - Dual-transport client updates: sub-second WebSocket streaming with automatic HTTP snapshot polling fallback.
 - Server-side safety gate: start, run, and resume commands strictly validate plant topology.
 
+### Task 3 & 3.1 — ACAMIS Operational Intelligence
+- Real-time operational intelligence layer ingesting authoritative simulation snapshots.
+- Six category-based specialist evaluators (**Safety**, **Maintenance**, **Quality**, **Production**, **Energy**, **Logistics**) operating on shared state.
+- Three operating modes: **Observe** (passive review), **Advisory** (human-in-the-loop application), and **Autonomous Simulation** (policy-gated simulated remediation).
+- Five repeatable manual incident scenarios with containment and recovery procedures.
+- **Task 3.1 Rolling Throughput Detector:** Continuous numerical monitoring flagging deviations exceeding 25% with a strict 3-tick persistence requirement.
+- Policy-gated autonomous recovery (12-tick duration) and mandatory human verification modal for high-risk procedures.
+- Bring Your Own Key (BYOK) advisory model gateway for Google Gemini and OpenAI-compatible providers with in-memory transient key handling.
+
 ## Explicit non-scope boundaries
 
 ::: danger Not in MVP Scope
 - **No real-time PLC/SCADA control:** SteelSim cannot actuate physical industrial machinery or read physical field sensors.
 - **No industrial safety certification:** Not certified under IEC 61508, IEC 61511, or ISO 13849.
 - **No finite-element or thermodynamic solver:** Uses discrete physics-based approximations, not computational fluid dynamics (CFD) or metallurgical phase-equilibrium engines.
-- **No completed ACAMIS layer:** Multi-agent optimization, automated energy dispatch, and predictive maintenance are future roadmap items.
-- **No multi-tenant cloud accounts:** Uses in-memory backend simulation states and browser-local design storage without multi-user authentication.
+- **No physical control from advisory models:** External LLM reasoning is strictly advisory and cannot bypass deterministic policy gates.
+- **No permanent multi-tenant persistence:** Telemetry, simulation instances, and detector evidence reside purely in server memory and browser storage.
 :::
 
 ## Completed MVP vs. future functionality

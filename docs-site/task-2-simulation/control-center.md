@@ -4,29 +4,25 @@ The Simulation Control Center is the primary operational workspace for Task 2, p
 
 ## Interface breakdown
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ MASTER HEADER                                           ● Backend Connected │
-│ Status: RUNNING | Version: #142 | Sim Time: 00:02:22 | Tick: 142            │
-│ Plant Power: 24.2 MW | Cooling: 980.0 m³/h | Active Units: 8/10             │
-│ Controls: [ ▶ Run ] [ ⏸ Pause ] [ ↺ Reset ] | Speed: [1x] [5x] [10x] [60x] │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ DYNAMIC PROCESS FLOW DIAGRAM (PFD)                                          │
-│                                                                             │
-│ [Raw Yard] ➔ [Furnace] ➔ [LRF] ➔ [CCM] ➔ [Reheat] ➔ [Mill] ➔ [Quench] ➔ [Bed]│
-│                                                                             │
-│ INFRASTRUCTURE CORRIDOR                                                     │
-│ [High-Voltage Substation 33kV/11kV]  ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ (Electrical Bus) │
-│ [Closed-Loop Cooling Station]        ═════════════════════ (Water Circuit)  │
-├──────────────────────────────────────┬──────────────────────────────────────┤
-│ EQUIPMENT INSPECTOR                  │ STATE TRACE & EVENT JOURNAL          │
-│ Asset: Induction Furnace             │ 10:14:02 [INFO] Simulation RUNNING   │
-│ Status: RUNNING                      │ 10:14:05 [WARN] CCM thermal nominal  │
-│ Power: 12,500 kW (12.5 MW)           │ 10:14:10 [TELEMETRY] Version #142    │
-│ Water: 120.0 m³/h                    │                                      │
-│ Temperature: 1,620 °C                │                                      │
-└──────────────────────────────────────┴──────────────────────────────────────┘
-```
+<pre class="mermaid">
+flowchart TD
+    subgraph Header ["1. Master Header & Controls"]
+        Status["Status: RUNNING (Tick 142, 00:02:22) | Version: #142 | Power: 24.2 MW | Cooling: 980 m³/h"]
+        Controls["Controls: [Run] [Pause] [Reset] | Speed Multipliers: [1x] [5x] [10x] [60x]"]
+    end
+
+    subgraph PFD ["2. Dynamic Process Flow Diagram (PFD)"]
+        PassLine["Primary Process Pass-Line<br/>Raw Yard ➔ Furnace ➔ LRF ➔ CCM ➔ Reheat ➔ Mill ➔ Quench ➔ Cooling Bed"]
+        Corridor["Infrastructure Utility Corridor<br/>High-Voltage Substation (Electrical Bus) | Cooling Station (Water Circuit)"]
+    end
+
+    subgraph BottomDeck ["3. Diagnostic Deck"]
+        Inspector["Equipment Inspector Drawer<br/>• Real-time Power, Water, Temp, Throughput<br/>• Rated Limit Utilization & Interlock Status"]
+        Journal["State Trace & Event Journal<br/>• Monotonic Event Stream<br/>• Telemetry & Interlock Trips Log"]
+    end
+
+    Header --> PFD --> BottomDeck
+</pre>
 
 ## Dynamically generated Process Flow Diagram (PFD)
 

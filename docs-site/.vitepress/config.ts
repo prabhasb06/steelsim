@@ -22,12 +22,13 @@ export default defineConfig({
       { text: 'Getting started', link: '/getting-started/introduction' },
       { text: 'Plant Builder', link: '/task-1-builder/overview' },
       { text: 'Simulation', link: '/task-2-simulation/overview' },
+      { text: 'ACAMIS', link: '/task-3-acamis/overview' },
       { text: 'Reference', link: '/reference/standard-tmt-topology' },
       { text: 'Project', link: '/project/architecture' },
       { text: 'v1.0.0-mvp', items: [
-        { text: 'Commit: e1dad6e', link: 'https://github.com/prabhasb06/steelsim/commit/e1dad6ef603ee8975a8500ab33debb40d1697d46' },
+        { text: 'Commit: 416cec9', link: 'https://github.com/prabhasb06/steelsim/commit/416cec95e3717c4081d689d9bd84329d30ffcba9' },
         { text: 'Local Backend (8000)', link: 'http://127.0.0.1:8000/api/health' },
-        { text: 'Local Frontend (5173)', link: 'http://127.0.0.1:5173/' }
+        { text: 'Local Frontend (5173)', link: 'http://localhost:5173/' }
       ]}
     ],
 
@@ -77,30 +78,48 @@ export default defineConfig({
           ]
         },
         {
+          text: 'Task 3 — ACAMIS Intelligence',
+          collapsed: false,
+          items: [
+            { text: '26. ACAMIS overview', link: '/task-3-acamis/overview' },
+            { text: '27. Architecture & data flow', link: '/task-3-acamis/architecture' },
+            { text: '28. Operating modes & risk gates', link: '/task-3-acamis/operating-modes' },
+            { text: '29. Scenario Control', link: '/task-3-acamis/scenario-control' },
+            { text: '30. Automatic monitoring', link: '/task-3-acamis/automatic-monitoring' },
+            { text: '31. Incident response & recovery', link: '/task-3-acamis/incident-response' },
+            { text: '32. Advisory Model Gateway', link: '/task-3-acamis/model-gateway' },
+            { text: '33. User interface', link: '/task-3-acamis/user-interface' },
+            { text: '34. ACAMIS REST API', link: '/task-3-acamis/api-reference' },
+            { text: '35. Testing & verification', link: '/task-3-acamis/testing' },
+            { text: '36. Investor demonstration', link: '/task-3-acamis/investor-demo' },
+            { text: '37. Limitations & roadmap', link: '/task-3-acamis/limitations-and-roadmap' }
+          ]
+        },
+        {
           text: 'Reference',
           collapsed: false,
           items: [
-            { text: '26. Standard TMT topology', link: '/reference/standard-tmt-topology' },
-            { text: '27. Equipment catalogue', link: '/reference/equipment-catalogue' },
-            { text: '28. REST API', link: '/reference/rest-api' },
-            { text: '29. WebSocket API', link: '/reference/websocket-api' },
-            { text: '30. Data models', link: '/reference/data-models' },
-            { text: '31. Environment variables', link: '/reference/environment-variables' },
-            { text: '32. Security', link: '/reference/security' },
-            { text: '33. Testing', link: '/reference/testing' },
-            { text: '34. Troubleshooting', link: '/reference/troubleshooting' }
+            { text: '38. Standard TMT topology', link: '/reference/standard-tmt-topology' },
+            { text: '39. Equipment catalogue', link: '/reference/equipment-catalogue' },
+            { text: '40. REST API', link: '/reference/rest-api' },
+            { text: '41. WebSocket API', link: '/reference/websocket-api' },
+            { text: '42. Data models', link: '/reference/data-models' },
+            { text: '43. Environment variables', link: '/reference/environment-variables' },
+            { text: '44. Security', link: '/reference/security' },
+            { text: '45. Testing', link: '/reference/testing' },
+            { text: '46. Troubleshooting', link: '/reference/troubleshooting' }
           ]
         },
         {
           text: 'Project',
           collapsed: false,
           items: [
-            { text: '35. Architecture', link: '/project/architecture' },
-            { text: '36. Task 1 & 2 integration', link: '/project/integration' },
-            { text: '37. Current limitations', link: '/project/current-limitations' },
-            { text: '38. Roadmap', link: '/project/roadmap' },
-            { text: '39. Glossary', link: '/project/glossary' },
-            { text: '40. MVP readiness', link: '/project/mvp-readiness' }
+            { text: '47. Architecture', link: '/project/architecture' },
+            { text: '48. Integration contract', link: '/project/integration' },
+            { text: '49. Current limitations', link: '/project/current-limitations' },
+            { text: '50. Roadmap', link: '/project/roadmap' },
+            { text: '51. Glossary', link: '/project/glossary' },
+            { text: '52. MVP readiness', link: '/project/mvp-readiness' }
           ]
         }
       ]

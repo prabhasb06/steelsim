@@ -4,17 +4,18 @@ The equipment library defines all industrial assets available for placement on t
 
 ## Component categories
 
-```
-                 INDUSTRIAL COMPONENT LIBRARY
-                               │
-       ┌───────────────────────┼───────────────────────┐
-       ▼                       ▼                       ▼
-  PRIMARY METALLURGY        SHAPING & FINISHING     UTILITY INFRASTRUCTURE
-  • Raw Material Yard       • Reheating Furnace     • Plant Substation
-  • Induction Furnace       • Rolling Mill Stands   • Cooling Pumping Station
-  • Ladle Refining Furnace  • Thermex Quenching     • Compressors
-  • Continuous Caster       • Rake Cooling Bed      • Water Pumps
-```
+<pre class="mermaid">
+flowchart TD
+    Library["Industrial Component Library"]
+    Primary["Primary Metallurgy<br/>• Raw Material Yard<br/>• Induction Furnace<br/>• Ladle Refining Furnace<br/>• Continuous Caster"]
+    Shaping["Shaping & Finishing<br/>• Reheating Furnace<br/>• Rolling Mill Stands<br/>• Thermex Quenching<br/>• Rake Cooling Bed"]
+    Utility["Utility Infrastructure<br/>• Plant Substation<br/>• Cooling Pumping Station<br/>• Compressors & Pumps"]
+
+    Library --> Primary
+    Library --> Shaping
+    Library --> Utility
+</pre>
+
 
 ### Primary metallurgy
 1. **Raw Material Yard (`RAW_MATERIAL_STORAGE`):** Storage yard for scrap steel and Direct-Reduced Iron (DRI). Dispatches solid charge at nominal 25 t/h.

@@ -15,21 +15,21 @@ Traditional computer-aided design (CAD) software treats factory schematics as st
 
 ## Workspace architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ CANVAS TOOLBAR                                                              │
-│ [Library] [Inspector] [Issues] | [Auto Connect] [Auto Layout] [Auto Setup]  │
-│                                | [Undo] [Redo] [Zoom] [Fit] [Demo] [Save]   │
-├────────────────────────────────┬────────────────────────────────────────────┤
-│ COMPONENT PALETTE (Left)       │ REACT FLOW INTERACTIVE CANVAS              │
-│ • Raw Material Storage         │                                            │
-│ • Induction Furnace            │   [Raw Yard] ────> [Induction Furnace]     │
-│ • Ladle Refining Furnace       │        │                   │               │
-│ • Continuous Casting Machine   │        ▼                   ▼               │
-│ • Reheating Furnace            │    (Material)         (Liquid Steel)       │
-│ • Rolling Mill Stands          │                                            │
-│ • Quenching Box                ├────────────────────────────────────────────┤
-│ • Cooling Bed                  │ TOPOLOGY ISSUES & EVENT CONSOLE (Bottom)   │
-│ • Substation / Cooling Station │ 0 Errors | 0 Warnings | All ports wired.   │
-└────────────────────────────────┴────────────────────────────────────────────┘
-```
+<pre class="mermaid">
+flowchart TD
+    subgraph Toolbar ["Canvas Toolbar"]
+        Tools["Panels: [Library] [Inspector] [Issues] | Automation: [Auto Connect] [Auto Layout] [Auto Setup] | Actions: [Demo] [Save]"]
+    end
+
+    subgraph Workspace ["Builder Workspace Layout"]
+        direction LR
+        Palette["Component Palette (Left)<br/>• Melting & Refining<br/>• Casting & Reheat<br/>• Rolling & Quench<br/>• Substation & Pumps"]
+        Canvas["React Flow Interactive Canvas (Center)<br/>• Visual Node Cards<br/>• Typed Connection Edges<br/>• Metallurgical Pass-Line Sequence"]
+    end
+
+    subgraph Bottom ["Issues & Console (Bottom)"]
+        Issues["Topology Issues & Event Console<br/>• 0 Errors | 0 Warnings | Port Polarity & Aggregate Capacity Status"]
+    end
+
+    Toolbar --> Workspace --> Bottom
+</pre>

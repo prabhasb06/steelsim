@@ -1,6 +1,6 @@
-# 28. REST API
+# 40. REST API
 
-The SteelSim backend exposes a comprehensive RESTful API for plant topology management, validation, and simulation lifecycle control.
+The SteelSim backend exposes a comprehensive RESTful API for plant topology management, validation, simulation lifecycle control, and ACAMIS autonomous operations.
 
 ## Endpoint reference
 
@@ -28,6 +28,22 @@ The SteelSim backend exposes a comprehensive RESTful API for plant topology mana
 | `GET` | `/api/simulations/{id}/snapshots`| Fetches bounded snapshot history (120 max)| `List[SimulationSnapshot]` |
 | `GET` | `/api/simulations/{id}/events` | Fetches bounded event log (500 max) | `List[SimulationEvent]` |
 
+## ACAMIS intelligence endpoints
+
+Task 3 introduces dedicated ACAMIS endpoints nested under each active simulation instance (`/api/simulations/{id}/acamis/*`). For detailed schemas, request payloads, and status codes, see the dedicated [ACAMIS REST API Reference](/task-3-acamis/api-reference).
+
+| Method | Path | Description | Response Model |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/simulations/{id}/acamis/status` | Current evaluation, active incidents, procedures, and telemetry detector | `AcamisStatusResponse` |
+| `POST` | `/api/simulations/{id}/acamis/scenarios/{scenario}` | Triggers controlled scenario (`cooling_water_degradation`, etc.) | `ScenarioTriggerResponse` |
+| `POST` | `/api/simulations/{id}/acamis/scenarios/reset` | Clears active scenario and resets synthetic detector state | `ResetScenarioResponse` |
+| `POST` | `/api/simulations/{id}/acamis/monitoring/demo` | Injects synthetic telemetry throughput drift for Task 3.1 demo | `AnomalyDemoResponse` |
+| `POST` | `/api/simulations/{id}/acamis/autonomy` | Updates operating mode (`OBSERVE`, `ADVISORY`, `AUTONOMOUS_SIMULATION`) | `AutonomyModeResponse` |
+| `POST` | `/api/simulations/{id}/acamis/procedures/{id}` | Approves and executes recommended operational procedure | `ProcedureExecutionResponse` |
+| `POST` | `/api/simulations/{id}/acamis/model/connect` | Connects external BYOK Gemini model key in transient memory | `ModelConnectResponse` |
+| `POST` | `/api/simulations/{id}/acamis/model/disconnect` | Purges transient model key from server memory | `ModelDisconnectResponse` |
+| `POST` | `/api/simulations/{id}/acamis/model/chat` | Queries connected LLM with live ACAMIS snapshot context | `ModelChatResponse` |
+
 ## Unified command dispatcher (`POST /api/simulations/{id}/command`)
 
 The unified command endpoint simplifies client integration by handling all lifecycle operations through a single payload:
@@ -40,3 +56,4 @@ The unified command endpoint simplifies client integration by handling all lifec
   }
 }
 ```
+
