@@ -1020,9 +1020,9 @@ onNodesDelete={() => setTimeout(() => { saveHistory(nodes, edges); validateGraph
                     deleteKeyCode={null}
                     fitView
                     proOptions={{ hideAttribution: true }}
-                    className="bg-industrial-900"
+                    className="bg-[#171a1d]"
                 >
-                    <Background color="#34373a" gap={20} size={1} />
+                    <Background color="#4a5158" gap={26} size={1.2} />
                 
                     {nodes.length === 0 && (
                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
