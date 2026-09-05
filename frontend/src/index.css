@@ -23,3 +23,7 @@ body {
 .monospace {
   @apply font-mono;
 }
+
+.react-flow__attribution {
+  display: none !important;
+}

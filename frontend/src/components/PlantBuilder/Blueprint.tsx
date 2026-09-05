@@ -1019,6 +1019,7 @@ onNodesDelete={() => setTimeout(() => { saveHistory(nodes, edges); validateGraph
                     nodeTypes={nodeTypes}
                     deleteKeyCode={null}
                     fitView
+                    proOptions={{ hideAttribution: true }}
                     className="bg-industrial-900"
                 >
                     <Background color="#34373a" gap={20} size={1} />
