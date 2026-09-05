@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { LayoutDashboard, Factory, Activity, Truck, Wrench, Shield, Zap, Cpu, Play, Pause, RotateCcw, ArrowRight, CheckCircle2, AlertTriangle, Clock3 } from 'lucide-react';
+import { LayoutDashboard, Factory, Activity, Truck, Wrench, Shield, Zap, Cpu, Play, Pause, RotateCcw, ArrowRight, CheckCircle2, AlertTriangle, Clock3, BookOpenText, ExternalLink } from 'lucide-react';
 import { Blueprint } from './components/PlantBuilder/Blueprint';
 import { ApiError, simulationApi } from './api';
 import { AcamisConsole } from './components/AcamisConsole';
@@ -10,6 +10,7 @@ import { isUtilityClass, orderProcessNodes, parseSimulationSnapshot, plantSimula
 
 type ViewMode = 'OVERVIEW' | 'BUILDER' | 'SIMULATION' | 'OPTIMIZATION' | 'ACAMIS';
 type StreamStatus = 'IDLE' | 'CONNECTING' | 'LIVE' | 'RECONNECTING';
+const STEELSIM_DOCS_URL = 'https://steelsim-docs.onrender.com/';
 
 function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('BUILDER');
@@ -249,6 +250,21 @@ function App() {
           <NavItem icon={<Shield />} label="Safety limits" disabled collapsed={sidebarCollapsed} />
           <NavItem icon={<Truck />} label="Logistics" disabled collapsed={sidebarCollapsed} />
         </div>
+        <a
+          href={STEELSIM_DOCS_URL}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Inside SteelSim — open the engineering reference"
+          title={sidebarCollapsed ? 'Inside SteelSim' : undefined}
+          className="group mx-2 mb-3 flex items-center gap-3 rounded-md border border-cyan-950 bg-cyan-950/20 px-3 py-2.5 text-cyan-200 transition-colors hover:border-cyan-800 hover:bg-cyan-950/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
+        >
+          <BookOpenText className="h-4 w-4 flex-none text-cyan-400" />
+          <span className={`min-w-0 flex-1 ${sidebarCollapsed ? 'hidden' : 'hidden md:block'}`}>
+            <span className="block text-[11px] font-bold">Inside SteelSim</span>
+            <span className="block truncate font-mono text-[8px] uppercase tracking-wider text-gray-500">Engineering reference</span>
+          </span>
+          {!sidebarCollapsed && <ExternalLink className="hidden h-3 w-3 flex-none text-gray-600 transition-colors group-hover:text-cyan-300 md:block" />}
+        </a>
       </div>
       )}
 
@@ -534,8 +550,42 @@ function OverviewView({
             <RecentEvents events={events} />
           </section>
         </div>
+
+        <EngineeringDiscovery />
       </div>
     </main>
+  );
+}
+
+function EngineeringDiscovery() {
+  return (
+    <a
+      href={STEELSIM_DOCS_URL}
+      target="_blank"
+      rel="noreferrer"
+      aria-label="Explore the engineering behind SteelSim"
+      className="engineering-discovery group mt-5 block overflow-hidden rounded-lg border border-industrial-600 px-5 py-5 transition-colors hover:border-cyan-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 sm:px-6 sm:py-6"
+    >
+      <div className="relative z-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+        <div className="max-w-4xl">
+          <div className="flex items-center gap-3 font-mono text-[9px] font-bold uppercase tracking-[0.22em] text-cyan-400">
+            <span className="h-px w-8 bg-cyan-700" />
+            Architecture / Engineering Reference
+          </div>
+          <h2 className="mt-4 text-xl font-bold tracking-tight text-white sm:text-2xl">
+            Explore the Engineering Behind SteelSim
+            <ArrowRight className="ml-2 inline h-5 w-5 text-cyan-400 transition-transform duration-300 group-hover:translate-x-1" />
+          </h2>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-gray-400">
+            Go beyond the interface. Explore SteelSim’s plant architecture, industrial component model, connection system, simulation engine, validation pipeline, and the engineering principles behind building deterministic virtual factories.
+          </p>
+        </div>
+        <div className="border-l border-industrial-600 pl-4 font-mono text-[9px] font-bold uppercase leading-5 tracking-[0.16em] lg:text-right">
+          <div className="text-gray-300">SteelSim creates the factory.</div>
+          <div className="text-cyan-400">ACAMIS understands the factory.</div>
+        </div>
+      </div>
+    </a>
   );
 }
 
