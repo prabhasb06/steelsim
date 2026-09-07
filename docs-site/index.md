@@ -99,52 +99,32 @@ npm run dev
 ## System Architecture
 
 <pre class="mermaid">
-flowchart LR
-    subgraph UI ["Client UI & Control (React 19)"]
-        direction TB
+flowchart TB
+    subgraph Browser ["Client (React 19 / TypeScript)"]
+        direction LR
+        Guard["Telemetry Guard<br/>• Monotonic Version Check<br/>• Schema Validation"]
         Builder["Plant Builder<br/>• React Flow Canvas<br/>• Typed Industrial Ports"]
-        Control["Control Center Actions<br/>• Operator Commands<br/>• Sim Lifecycle Triggers"]
-        ACAMISUI["ACAMIS Console<br/>• Advisory Interventions<br/>• Mitigation Approvals"]
+        ACAMISUI["ACAMIS Console<br/>• Monitoring & Plan<br/>• Impact Deck & Chat"]
+        Control["Control Center<br/>• Dynamic PFD<br/>• Live KPI Summary"]
     end
 
-    subgraph API ["REST API Gateway"]
-        direction TB
-        CmdGate["REST Command Endpoints<br/>• POST /api/plant/validate<br/>• POST /api/simulations<br/>• POST /api/simulations/:id/command<br/>• REST /api/acamis/*"]
-    end
-
-    subgraph Backend ["Backend Runtime (Python / FastAPI)"]
-        direction TB
+    subgraph Server ["Backend (Python / FastAPI)"]
+        direction LR
         Validator["Topology Validator<br/>• Port & Utility Checks"]
         SimManager["Simulation Manager<br/>• Lifecycle State Machine"]
-        Engine["Deterministic Engine<br/>• 1s Discrete Loop<br/>• Flow & Cascade Interlocks"]
+        Engine["Deterministic Engine<br/>• Tick Loop (1s)<br/>• Flow & Interlocks"]
         ACAMISCore["ACAMIS Core<br/>• Rolling Detector (Task 3.1)<br/>• 6 Specialist Evaluators"]
     end
 
-    subgraph Stream ["Real-Time Streaming"]
-        direction TB
-        PollStream["WebSocket Stream & HTTP Poll<br/>• Sub-Second Real-Time Telemetry<br/>• Authoritative 1s Tick Broadcast"]
-    end
-
-    subgraph Monitoring ["Client Telemetry & Monitoring (React 19)"]
-        direction TB
-        Guard["Telemetry Guard<br/>• Monotonic Sequence Filter<br/>• Strict Schema Validation Gate"]
-        LivePFD["Dynamic Process Flow Diagram<br/>• Live Node Status<br/>• Material & Utility Flows"]
-        LiveKPI["KPI Summary Deck<br/>• Power, Water, Throughput<br/>• Incident Response Panel"]
-    end
-
-    Builder -->|Validate & Create| CmdGate
-    Control -->|Control Commands| CmdGate
-    ACAMISUI <-->|Mitigation Actions| CmdGate
-
-    CmdGate --> Validator
-    CmdGate --> SimManager
-    CmdGate --> ACAMISCore
+    Builder -->|POST /api/plant/validate| Validator
+    Builder -->|POST /api/simulations| SimManager
+    Control -->|POST command| SimManager
+    ACAMISUI -->|REST API| ACAMISCore
 
     SimManager --> Engine
     Engine --> ACAMISCore
 
-    Engine -->|Authoritative Snapshots| PollStream
-    PollStream -->|Validated Stream| Guard
-    Guard --> LivePFD
-    Guard --> LiveKPI
+    Engine -->|WebSocket Stream<br/>& HTTP Poll| Guard
+    Guard --> Control
+    Guard --> ACAMISUI
 </pre>
