@@ -20,25 +20,46 @@ SteelSim models, edits, validates, and serializes the physical factory graph, an
 ## System overview diagram
 
 <pre class="mermaid">
-graph TB
-    subgraph Client ["Client Browser (React 19 / TypeScript)"]
+flowchart LR
+    subgraph UI ["Client UI & Control (React 19)"]
+        direction TB
         Builder["Plant Builder (Task 1)<br/>• React Flow Canvas<br/>• Typed Industrial Ports<br/>• LocalStorage Persistence"]
-        ControlCenter["Simulation Control Center (Task 2)<br/>• Dynamic Process Flow Diagram<br/>• Equipment Inspector<br/>• State Trace & Event Log"]
-        Guard["Client Telemetry Guard<br/>• Monotonic Version Check<br/>• Schema Validation"]
+        Control["Control Actions (Task 2)<br/>• Simulation Lifecycle Triggers<br/>• Step & Speed Commands"]
+    end
+
+    subgraph API ["REST API Gateway"]
+        direction TB
+        CmdGate["REST Command Endpoints<br/>• POST /api/plant/validate<br/>• POST /api/simulations<br/>• POST /api/simulations/:id/command"]
     end
 
     subgraph Backend ["Backend Runtime (Python / FastAPI)"]
+        direction TB
         Validator["Topology Validator<br/>• Graph Syntax & Sequencing<br/>• Aggregate Utility Checks"]
         SimManager["Simulation Manager<br/>• Lifecycle State Machine<br/>• Bounded Memory & Eviction"]
         Engine["Deterministic Engine<br/>• Discrete Ticks (1s)<br/>• Flow & Interlock Propagation"]
     end
 
-    Builder -->|POST /api/plant/validate| Validator
-    Builder -->|POST /api/simulations| SimManager
-    ControlCenter -->|POST /api/simulations/:id/command| SimManager
+    subgraph Stream ["Real-Time Streaming"]
+        direction TB
+        PollStream["WebSocket Stream & HTTP Polling<br/>• Sub-Second Real-Time Telemetry<br/>• Authoritative 1s Tick Broadcast"]
+    end
+
+    subgraph Monitoring ["Client Telemetry & Monitoring (React 19)"]
+        direction TB
+        Guard["Client Telemetry Guard<br/>• Monotonic Version Check<br/>• Strict Schema Validation Gate"]
+        Inspector["Simulation Control Center<br/>• Dynamic Process Flow Diagram<br/>• Equipment Inspector<br/>• State Trace & Event Log"]
+    end
+
+    Builder -->|Validate & Launch| CmdGate
+    Control -->|Control Commands| CmdGate
+
+    CmdGate --> Validator
+    CmdGate --> SimManager
     SimManager --> Engine
-    Engine -->|WebSocket Stream & HTTP Polling| Guard
-    Guard --> ControlCenter
+
+    Engine -->|Authoritative Snapshots| PollStream
+    PollStream -->|Validated Stream| Guard
+    Guard --> Inspector
 </pre>
 
 ## Verification and baseline status
