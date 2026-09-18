@@ -26,13 +26,22 @@ def _simulation(sim_id: str):
         raise HTTPException(status_code=404, detail="Simulation not found")
     return sim
 
+
+def _model_context(sim):
+    assessment = service.status(sim)
+    # Send current operational evidence, not gateway metadata, provider errors or prior replies.
+    return {key: assessment[key] for key in (
+        'contract_version', 'simulation_id', 'operating_mode', 'plant_health', 'snapshot',
+        'incident', 'incident_origin', 'incident_evidence', 'specialist_findings',
+        'signal_monitoring', 'automatic_monitoring', 'recovery_plan', 'context_manifest',
+    )}
+
 async def _automatic_model_review(sim, trigger: str) -> None:
     gateway = model_gateway.public_status(sim)
     has_operational_change = getattr(sim, "acamis_scenario", None) or getattr(sim, "acamis_last_resolution", None)
     if not gateway["connected"] or getattr(sim, "acamis_autonomy", "OBSERVE") != "AUTONOMOUS_SIMULATION" or not has_operational_change:
         return
-    context = service.status(sim)
-    context.pop("snapshot", None)
+    context = _model_context(sim)
     try:
         result = await model_gateway.ask(sim, "Review ACAMIS's autonomous response, identify residual risk, and state whether human verification remains required.", context)
         sim.acamis_last_model_advisory = {**result, "trigger": trigger}
@@ -103,8 +112,7 @@ async def disconnect_model(sim_id: str):
 async def model_chat(sim_id: str, request: ModelChatRequest):
     try:
         sim = _simulation(sim_id)
-        context = service.status(sim)
-        context.pop("snapshot", None)
+        context = _model_context(sim)
         result = await model_gateway.ask(sim, request.message, context)
         service._audit(sim, "MODEL_ADVISORY_RECEIVED", f"Received advisory analysis from {result['provider']} / {result['model']}.")
         return result

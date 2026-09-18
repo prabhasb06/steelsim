@@ -4,6 +4,8 @@ import asyncio
 import json
 from datetime import datetime, timezone
 from typing import Any
+from types import SimpleNamespace
+from urllib.parse import urlsplit, urlencode
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -34,7 +36,7 @@ def _gemini_model_names(catalog: dict[str, Any]) -> list[str]:
             continue
         name = str(entry.get("name", "")).removeprefix("models/").strip()
         methods = entry.get("supportedGenerationMethods", [])
-        if name and (not methods or "generateContent" in methods):
+        if name.startswith('gemini-') and 'generateContent' in methods and not any(marker in name for marker in ('image', 'tts', 'live', 'omni')):
             names.append(name)
     return names
 
@@ -82,8 +84,10 @@ def _provider_error_message(status_code: int, detail: str) -> str:
             "INVALID API KEY: Google did not accept this credential. Copy an active Gemini API key "
             "from Google AI Studio and paste the complete value; ACAMIS does not save it."
         )
+    if status_code == 401:
+        return "INVALID API KEY: the provider rejected this credential. Check the key and selected provider."
     if status_code == 403:
-        return "API KEY PERMISSION DENIED: verify that this key is enabled and restricted for the Gemini API."
+        return "API KEY PERMISSION DENIED: verify this key's provider permissions and restrictions."
     if status_code == 429:
         return "MODEL RATE LIMIT REACHED: wait for the provider quota window to reset, then retry."
     if status_code == 404 and "model" in lowered:
@@ -103,13 +107,16 @@ def _request_json(url: str, *, api_key: str, method: str = "GET", payload: dict[
         body = json.dumps(payload).encode("utf-8")
     request = Request(url, data=body, headers=headers, method=method)
     try:
-        with urlopen(request, timeout=12) as response:
-            return json.loads(response.read().decode("utf-8"))
+        with urlopen(request, timeout=45) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            if not isinstance(result, dict):
+                raise ValueError('The model endpoint returned an invalid JSON response')
+            return result
     except HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
-        raise ValueError(_provider_error_message(exc.code, detail)) from exc
+        raise ValueError(_provider_error_message(exc.code, detail.replace(api_key, '[REDACTED]'))) from exc
     except (URLError, TimeoutError, json.JSONDecodeError) as exc:
-        raise ValueError(f"Unable to reach a valid model endpoint: {exc}") from exc
+        raise ValueError("Unable to reach the model endpoint or read its response. Check the URL, network, and provider availability.") from exc
 
 
 async def connect(sim: Any, provider: str, model: str, api_key: str, base_url: str | None) -> dict[str, Any]:
@@ -125,21 +132,30 @@ async def connect(sim: Any, provider: str, model: str, api_key: str, base_url: s
         resolved_base = resolved_base or "https://generativelanguage.googleapis.com/v1beta"
     elif not resolved_base:
         raise ValueError("An HTTPS base URL is required for an OpenAI-compatible provider")
-    if not resolved_base.startswith("https://") and not resolved_base.startswith("http://127.0.0.1") and not resolved_base.startswith("http://localhost"):
+    parsed = urlsplit(resolved_base)
+    if parsed.username or parsed.password or parsed.query or parsed.fragment or not parsed.hostname:
+        raise ValueError('Use a base URL without credentials, query parameters, or fragments')
+    if parsed.scheme != 'https' and not (parsed.scheme == 'http' and parsed.hostname in {'127.0.0.1', 'localhost', '::1'}):
         raise ValueError("Use HTTPS for remote providers; HTTP is allowed only for a local model server")
 
-    test_url = f"{resolved_base}/models"
-    catalog = await asyncio.to_thread(_request_json, test_url, api_key=api_key, provider=provider)
     available_models: list[str] = []
     model_changed = False
     if provider == "GEMINI":
-        available_models = _gemini_model_names(catalog)
+        token = None
+        for _ in range(20):
+            query = urlencode({'pageSize': 100, **({'pageToken': token} if token else {})})
+            catalog = await asyncio.to_thread(_request_json, f'{resolved_base}/models?{query}', api_key=api_key, provider=provider)
+            available_models.extend(_gemini_model_names(catalog))
+            token = catalog.get('nextPageToken')
+            if not token:
+                break
+        available_models = list(dict.fromkeys(available_models))
         model, model_changed = _select_gemini_model(model, available_models)
 
-    message = "Connection verified. Model output is advisory and remains behind ACAMIS policy gates."
+    message = "Generation verified: the model returned a test response. Model output remains advisory."
     if model_changed:
         message = f"Requested model is unavailable; ACAMIS selected {model} from the verified provider catalog. Policy gates remain in control."
-    sim.acamis_model_config = {
+    candidate = {
         "configured": True,
         "connected": True,
         "provider": provider,
@@ -151,15 +167,35 @@ async def connect(sim: Any, provider: str, model: str, api_key: str, base_url: s
         "last_tested_at": datetime.now(timezone.utc).isoformat(),
         "message": message,
     }
+    # A catalog response alone does not verify generation permissions, quota or model ID.
+    # Do not replace a working connection until the candidate actually responds.
+    await _ask(SimpleNamespace(acamis_model_config=candidate), 'Reply briefly with ACAMIS connection confirmed.', {})
+    sim.acamis_model_config = candidate
+    sim.acamis_last_model_advisory = None
     return public_status(sim)
 
 
 def disconnect(sim: Any) -> dict[str, Any]:
     sim.acamis_model_config = None
+    sim.acamis_last_model_advisory = None
     return public_status(sim)
 
 
 async def ask(sim: Any, operator_message: str, acamis_context: dict[str, Any]) -> dict[str, Any]:
+    config = getattr(sim, 'acamis_model_config', None)
+    try:
+        result = await _ask(sim, operator_message, acamis_context)
+    except ValueError as exc:
+        if config and getattr(sim, 'acamis_model_config', None) is config:
+            config['connected'] = False
+            config['message'] = f'Model review failed; reconnect to verify: {exc}'
+        raise
+    if getattr(sim, 'acamis_model_config', None) is not config:
+        raise ValueError('The model connection changed during this review. Request a new review.')
+    return result
+
+
+async def _ask(sim: Any, operator_message: str, acamis_context: dict[str, Any]) -> dict[str, Any]:
     config = getattr(sim, "acamis_model_config", None)
     if not config or not config.get("connected"):
         raise ValueError("Connect and verify a model before using ACAMIS model review")
@@ -197,13 +233,15 @@ async def ask(sim: Any, operator_message: str, acamis_context: dict[str, Any]) -
             payload=payload,
         )
         candidates = result.get("candidates", [])
-        if not candidates or "content" not in candidates[0]:
+        if not isinstance(candidates, list) or not candidates or not isinstance(candidates[0], dict) or not isinstance(candidates[0].get('content'), dict):
             raise ValueError("Gemini returned no readable response candidate")
         parts = candidates[0]["content"].get("parts", [])
+        if not isinstance(parts, list):
+            raise ValueError('Gemini returned no readable text parts')
         reply = "".join(
             part.get("text", "")
             for part in parts
-            if isinstance(part, dict) and "text" in part
+            if isinstance(part, dict) and isinstance(part.get('text'), str) and not part.get('thought')
         )
         if not reply.strip():
             raise ValueError("Gemini returned an empty response")
@@ -215,4 +253,6 @@ async def ask(sim: Any, operator_message: str, acamis_context: dict[str, Any]) -
             reply = result["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise ValueError("The model endpoint returned no readable response") from exc
+        if not isinstance(reply, str) or not reply.strip():
+            raise ValueError('The model endpoint returned an empty text response')
     return {"reply": str(reply), "provider": config["provider"], "model": config["model"], "advisory_only": True}

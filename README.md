@@ -61,6 +61,14 @@ Active simulation instances stop when the backend restarts. Task 4 records local
 
 ## Task 4: Operations History and signal monitoring
 
+### Connecting an advisory model
+
+Start a simulation, open ACAMIS Intelligence, select the provider, and paste your key into the transient API-key field. Gemini can automatically select a text-generation model from the key's current catalog. Compatible providers require their model ID and API base URL (typically ending in `/v1`). **Test & connect** makes a small generation request; provider charges or quota usage may apply. A green verified status means generation succeeded, not merely that the model catalog was reachable.
+
+Use **Request model review** to send the current simulated telemetry, incident evidence, and approved recovery plan. Output remains advisory; it does not bypass the deterministic policy or approval gates. Connection errors identify key, permission, quota, or endpoint problems. Keys stay in server memory for that simulation and must be re-entered after disconnect, session replacement, or backend restart. Do not paste keys into chat, source files, or documentation.
+
+Gemini transport follows Google's [generateContent API](https://ai.google.dev/api/generate-content) and [model catalog API](https://ai.google.dev/api/models).
+
 - The backend checks temperature deviation (>40 °C), cooling flow (<75% of expected), and electrical demand (>112% of expected) for three consecutive running ticks. Baselines come from the simulator, not scenario labels or an external model. Concurrent deviations on one asset are grouped as correlated evidence, not a proven root cause.
 - These additional signal findings are operator-review evidence only; they do not introduce autonomous repairs. Existing Task 3/3.1 procedures, approval gates, and rolling-throughput recovery remain unchanged. Pause freezes detection; Clear Scenario and Reset clear monitoring state.
 - Operations History provides recorded-frame replay, a power trace, loaded-frame comparisons, policy audit, and a downloadable JSON incident report. Comparisons are sample summaries, not energy savings claims. The UI lists the most recent 100 runs and loads recordings in pages of 500 frames; the API also supports run pagination.

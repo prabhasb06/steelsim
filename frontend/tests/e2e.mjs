@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import puppeteer from 'puppeteer';
+import { createServer } from 'node:http';
+
+// Test the complete browser -> FastAPI -> provider path without a real paid API key.
+const modelRequests = [];
+const modelServer = createServer(async (request, response) => {
+  let body = '';
+  for await (const chunk of request) body += chunk;
+  modelRequests.push({ path: request.url, authorization: request.headers.authorization, payload: JSON.parse(body) });
+  response.writeHead(200, { 'Content-Type': 'application/json' });
+  response.end(JSON.stringify({ choices: [{ message: { content: 'E2E provider reviewed live SteelSim telemetry.' } }] }));
+});
+await new Promise(resolve => modelServer.listen(0, '127.0.0.1', resolve));
 
 const baseUrl = process.env.STEELSIM_BASE_URL ?? 'http://127.0.0.1:5173/';
 const browserCandidates = [
@@ -23,6 +35,8 @@ page.on('console', message => {
 });
 
 async function clickButton(label) {
+  await page.waitForFunction(text => [...document.querySelectorAll('button')]
+    .some(button => button.textContent?.trim() === text && !button.disabled), {}, label);
   const clicked = await page.evaluate(text => {
     const button = [...document.querySelectorAll('button')]
       .find(candidate => candidate.textContent?.trim() === text);
@@ -78,6 +92,21 @@ try {
 
   await clickButton('ACAMIS Intelligence');
   await page.waitForFunction(() => document.body.textContent?.includes('Autonomous Operations Center'));
+  await page.select('form select', 'OPENAI_COMPATIBLE');
+  await page.type('input[placeholder="Provider model ID"]', 'e2e-text-model');
+  await page.type('input[placeholder="https://provider.example/v1"]', `http://127.0.0.1:${modelServer.address().port}/v1`);
+  await page.type('input[type="password"]', 'fake-e2e-key');
+  await clickButton('Test & connect');
+  await page.waitForFunction(() => document.body.textContent?.includes('VERIFIED · e2e-text-model'));
+  assert.equal(await page.$eval('input[type="password"]', e => e.value), '');
+  await clickButton('Request model review');
+  await page.waitForFunction(() => document.body.textContent?.includes('E2E provider reviewed live SteelSim telemetry.'));
+  assert.equal(modelRequests.length, 2);
+  assert.equal(modelRequests[1].authorization, 'Bearer fake-e2e-key');
+  assert.ok(modelRequests[1].payload.messages[1].content.includes('node_telemetry'));
+  assert.ok(!JSON.stringify(modelRequests[1].payload).includes('fake-e2e-key'));
+  await clickButton('Disconnect');
+  await page.waitForFunction(() => document.body.textContent?.includes('API STATUS · NOT CONNECTED'));
   await clickButton('Cooling water');
   await page.waitForFunction(() => document.body.textContent?.includes('Verified operating incident'));
   for (const domain of ['Safety', 'Maintenance', 'Quality', 'Production', 'Energy', 'Logistics']) {
@@ -156,4 +185,5 @@ try {
   console.log('SteelSim browser smoke test passed.');
 } finally {
   await browser.close();
+  await new Promise(resolve => modelServer.close(resolve));
 }
