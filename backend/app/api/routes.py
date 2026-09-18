@@ -16,7 +16,9 @@ from app.engine.topology_validator import validate_topology
 
 router = APIRouter(prefix="/api")
 
-manager = SimulationManager()
+from app.history import HistoryStore
+
+manager = SimulationManager(history=HistoryStore())
 
 
 def require_runnable_topology(sim) -> None:

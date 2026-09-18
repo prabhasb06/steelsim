@@ -26,6 +26,7 @@ def _audit(sim: Any, event: str, detail: str, severity: str = "INFO") -> None:
         sim.acamis_audit = []
     sim.acamis_audit.append({"id": f"acamis-{uuid4().hex}", "at": _now(), "event": event, "detail": detail, "severity": severity, "state_version": sim.state_version})
     del sim.acamis_audit[:-200]
+    sim.persist_history()
 
 def _affected_equipment(sim: Any) -> list[str]:
     return list(dict.fromkeys([*list((sim.acamis_impact or {}).get("equipment", {})),
@@ -68,10 +69,12 @@ def status(sim: Any) -> dict[str, Any]:
                 procedure_statuses[procedure] = "AVAILABLE"
     return {
         "contract_version": "acamis.v1", "source": "SteelSim Digital Twin", "connection": "LIVE" if sim.status.value == "RUNNING" else "STANDBY", "simulation_id": sim.id, "state_version": sim.state_version,
-        "operating_mode": getattr(sim, "acamis_autonomy", "OBSERVE"), "plant_health": "STABILIZED" if contained else ("INCIDENT" if scenario else ("DEGRADED" if sim.plant_summary["interlocked_nodes"] else "NORMAL")),
+        "operating_mode": getattr(sim, "acamis_autonomy", "OBSERVE"), "plant_health": "STABILIZED" if contained else ("INCIDENT" if scenario else ("DEGRADED" if sim.plant_summary["interlocked_nodes"] or sim.signal_monitor["findings"] else "NORMAL")),
         "incident": None if not definition else {"id": scenario, "title": definition["title"], "severity": severity, "summary": definition["summary"], "affected_equipment": affected, "verified": True, "contained": contained},
         "specialist_findings": findings,
         "automatic_monitoring": detector.public_status(sim),
+        "signal_monitoring": sim.signal_monitor,
+        "history_error": sim.history_error,
         "incident_origin": "Telemetry detector" if scenario == detector.INCIDENT else "Manual scenario" if scenario else None,
         "incident_evidence": sim.rolling_monitor["evidence"] if scenario == detector.INCIDENT else [],
         "recovery_plan": {"status": "HUMAN_VERIFICATION_REQUIRED" if escalation else ("RECOVERING" if sim.acamis_recovery_tick is not None else "READY" if scenario else "RECOVERED" if getattr(sim, "acamis_last_resolution", None) else "MONITORING"), "priority_order": ["Safety", "Equipment limits", "Quality", "Maintenance", "Production", "Energy", "Logistics"], "recommended_procedures": definition["procedures"] if definition else [], "procedure_statuses": procedure_statuses, "rationale": "In autonomous mode, safe containment is automatic. Final high-risk repairs require an operator; low-risk simulated recovery advances with the simulation clock."},
@@ -150,6 +153,8 @@ def inject_scenario(sim: Any, scenario: str) -> dict[str, Any]:
     return status(sim)
 
 def clear_scenario(sim: Any) -> dict[str, Any]:
+    from app.acamis.multivariate import initial_state
+    sim.signal_monitor = initial_state()
     detector.reset(sim)
     sim.rolling_disturbance.clear()
     sim.acamis_last_resolution = None

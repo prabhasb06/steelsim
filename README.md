@@ -57,6 +57,23 @@ npm run test:e2e
 
 The E2E test expects the frontend and backend to be running. It uses installed Chrome or Edge when Puppeteer's bundled browser is unavailable.
 
-Simulation instances are intentionally ephemeral in this MVP and are cleared when the backend restarts. Plant designs can be saved in the current browser. Persistent multi-user projects, role-based accounts, and ACAMIS optimization remain post-MVP capabilities and are not presented as finished controls.
+Active simulation instances stop when the backend restarts. Task 4 records local run checkpoints, telemetry frames, incidents, and policy audit in SQLite. Open **Operations History** to inspect recordings or explicitly restore a run into a new **paused** session. Plant designs can also be saved in the current browser. Persistent multi-user projects, role-based accounts, and ACAMIS optimization remain post-MVP capabilities.
+
+## Task 4: Operations History and signal monitoring
+
+- The backend checks temperature deviation (>40 °C), cooling flow (<75% of expected), and electrical demand (>112% of expected) for three consecutive running ticks. Baselines come from the simulator, not scenario labels or an external model. Concurrent deviations on one asset are grouped as correlated evidence, not a proven root cause.
+- These additional signal findings are operator-review evidence only; they do not introduce autonomous repairs. Existing Task 3/3.1 procedures, approval gates, and rolling-throughput recovery remain unchanged. Pause freezes detection; Clear Scenario and Reset clear monitoring state.
+- Operations History provides recorded-frame replay, a power trace, loaded-frame comparisons, policy audit, and a downloadable JSON incident report. Comparisons are sample summaries, not energy savings claims. The UI lists the most recent 100 runs and loads recordings in pages of 500 frames; the API also supports run pagination.
+- Restore creates a new run, loads the saved plant into the builder, and keeps the clock paused until explicitly resumed. API keys and model replies are not archived; reconnect the provider separately. Old runs remain available after reset or deletion of a live simulation.
+
+### Storage and deployment limits
+
+Set `STEELSIM_HISTORY_DB` to a writable SQLite file on a persistent volume. The local default is `data/operations.sqlite3`, excluded from Git. The existing free Render deployment does not configure a persistent volume, so do **not** promise history survival across deployment or host replacement there. This change does not provision paid infrastructure.
+
+This is a single-process MVP journal, not a production historian. Frames are written synchronously; accelerated runs may run more slowly with recording enabled. No automatic retention/deletion is configured: monitor disk usage and back up the SQLite database using SQLite-aware backup tools. Storage-write failures are surfaced in ACAMIS while the live simulation continues, and recordings can have gaps during an outage. Restart recovery is explicit, not unattended.
+
+### Demo
+
+Run the TMT plant, use Observe mode, inject Furnace Stability, and wait at least three running ticks. Inspect the thermal/power evidence. Pause, open Operations History, select that run, replay the recorded frames, and download its report. Restore as a paused session and verify the original plant and simulation tick before resuming. Real SCADA connections, physical control, learned anomaly detection, and arbitrary fault repair remain out of scope.
 
 The expected demo workflow is: open **Plant Builder**, click **Demo**, confirm the topology is valid, open **Simulation**, run the plant, inspect a process card, change speed, pause, and finish on **Overview**.

@@ -3,10 +3,13 @@ import { apiRequest } from '../api';
 import type { SimulationSnapshot } from '../types';
 import type { PlantGraph } from '../types/topology';
 import { IncidentImpact } from './IncidentImpact';
+import { SignalEvidence, type SignalFinding } from './OperationsHistory';
 import { AutomaticMonitoring, type Monitoring } from './AutomaticMonitoring';
 
 type Finding = { domain: string; severity: string; confidence: number; summary: string; evidence: string[]; recommended_procedures: string[]; escalation_required: boolean };
 type AcamisStatus = {
+  signal_monitoring?: { findings: SignalFinding[] };
+  history_error?: string | null;
   automatic_monitoring?: Monitoring;
   incident_origin?: string | null;
   connection: string; operating_mode: string; plant_health: string; state_version: number;
@@ -123,6 +126,8 @@ export function AcamisConsole({ simulationId, snapshot, onOpenSimulation, graph,
       </header>
       <div role="status" className="mt-4 rounded border border-industrial-600 p-3 text-xs text-gray-300">Simulation: {snapshot?.status ?? 'CONNECTING'} · tick {snapshot?.tick ?? 0}. {snapshot?.status === 'RUNNING' ? 'Running — scenario effects update live below.' : 'Use Run / Resume in the top bar before injecting an anomaly.'}{busy && ' Processing request; provider review may take a few seconds.'}</div>
       <IncidentImpact snapshot={snapshot} graph={graph} onLocate={onLocate} />
+      {data?.history_error && <p role="alert" className="mt-3 text-xs text-amber-300">{data.history_error}</p>}
+      <SignalEvidence findings={data?.signal_monitoring?.findings ?? []} />
       <AutomaticMonitoring monitor={data?.automatic_monitoring} busy={busy} hasIncident={!!data?.incident} onDemo={() => void invoke('monitoring/demo')} onClear={() => void invoke('scenarios/reset')} onLocate={onLocate} />
       {data?.incident_origin && <p className="mt-3 text-xs font-bold text-cyan-200">Incident source: {data.incident_origin}</p>}
       {data?.incident && data.recovery_plan.status === 'HUMAN_VERIFICATION_REQUIRED' && approvalProcedure && approvalPromptKey !== dismissedApprovalPromptKey && <div className="fixed inset-0 z-50 flex items-center justify-center bg-industrial-950/70 p-4" role="alertdialog" aria-modal="true" aria-label="Human intervention required"><section className="w-full max-w-md rounded-xl border border-red-600 bg-industrial-900 p-5 shadow-2xl shadow-red-950/50"><div className="flex items-start gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-red-500 bg-red-950/70 font-mono text-lg font-bold text-red-300">!</div><div><div className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-red-300">Human intervention required</div><h2 className="mt-1 text-lg font-bold text-white">{data.incident.title}</h2></div></div><p className="mt-4 text-sm leading-6 text-gray-300">{data.incident.contained ? 'ACAMIS has applied simulated containment.' : 'This incident has not yet been contained.'} Final recovery requires an operator decision. In Observe mode, change to Advisory or Autonomous Simulation from the plan before applying a procedure.</p><div className="mt-4 rounded border border-industrial-700 bg-industrial-950/70 p-3 text-xs text-gray-300"><div><span className="text-gray-500">Affected assets:</span> {data.incident.affected_equipment.length}</div><div className="mt-1"><span className="text-gray-500">Proposed action:</span> {approvalProcedure.replaceAll('_', ' ')}</div></div><div className="mt-5 flex flex-wrap justify-end gap-2"><button type="button" onClick={() => { setDismissedApprovalPromptKey(approvalPromptKey); document.getElementById('central-recovery-plan')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }} className="rounded border border-industrial-600 px-3 py-2 text-[10px] font-bold text-gray-300">Review plan</button><button type="button" disabled={busy || data.operating_mode === 'OBSERVE'} onClick={() => void invoke(`procedures/${approvalProcedure}`, { human_verified: true })} className="rounded border border-amber-500 bg-amber-950/60 px-3 py-2 text-[10px] font-bold text-amber-100 disabled:opacity-30">Apply human intervention</button></div></section></div>}

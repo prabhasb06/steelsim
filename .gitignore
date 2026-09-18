@@ -8,3 +8,4 @@ frontend/pnpm-workspace.yaml
 docs-site/.vitepress/cache/
 docs-site/.vitepress/dist/
 .env
+data/

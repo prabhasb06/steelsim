@@ -29,6 +29,7 @@ const nodeTypes = {
 };
 
 interface BlueprintCanvasProps {
+    initialGraph?: PlantGraph;
     focusRequest?: { nodeId: string; nonce: number } | null;
     isFocusMode: boolean;
     setIsFocusMode: (f: boolean) => void;
@@ -42,6 +43,7 @@ interface BlueprintCanvasProps {
 }
 
 const BlueprintCanvas = ({ 
+    initialGraph,
     isFocusMode, 
     setIsFocusMode,
     isActive = true,
@@ -54,8 +56,17 @@ const BlueprintCanvas = ({
 }: BlueprintCanvasProps) => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState<any>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<any>((initialGraph?.nodes ?? []).map(n => ({
+    id: n.id, type: 'equipment', position: n.position,
+    data: { ...n, engineeringId: n.metadata.engineering_id },
+  })));
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>((initialGraph?.edges ?? []).map(e => ({
+    id: e.id, source: e.source_node, target: e.target_node,
+    sourceHandle: e.source_port, targetHandle: e.target_port,
+    data: { connection_type: e.connection_type },
+    type: 'smoothstep', markerEnd: { type: MarkerType.ArrowClosed },
+    style: { stroke: ({ MATERIAL: '#3b82f6', ELECTRICAL: '#eab308', WATER: '#06b6d4', SIGNAL: '#a855f7', AIR: '#94a3b8' })[e.connection_type] },
+  })));
   const { screenToFlowPosition, fitView, zoomIn, zoomOut, zoomTo, getViewport } = useReactFlow();
   
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);

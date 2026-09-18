@@ -4,11 +4,12 @@ import { Blueprint } from './components/PlantBuilder/Blueprint';
 import { ApiError, simulationApi } from './api';
 import { AcamisConsole } from './components/AcamisConsole';
 import { IncidentImpact } from './components/IncidentImpact';
+import { OperationsHistory } from './components/OperationsHistory';
 import type { SimulationCommand, SimulationEvent, SimulationSnapshot, SimulationState } from './types';
 import type { PlantGraph, ValidationResult } from './types/topology';
 import { isUtilityClass, orderProcessNodes, parseSimulationSnapshot, plantSimulationSignature, shouldAcceptSnapshot } from './simulation-utils';
 
-type ViewMode = 'OVERVIEW' | 'BUILDER' | 'SIMULATION' | 'OPTIMIZATION' | 'ACAMIS';
+type ViewMode = 'OVERVIEW' | 'BUILDER' | 'SIMULATION' | 'OPTIMIZATION' | 'ACAMIS' | 'HISTORY';
 type StreamStatus = 'IDLE' | 'CONNECTING' | 'LIVE' | 'RECONNECTING';
 const STEELSIM_DOCS_URL = 'https://steelsim-docs.onrender.com/';
 
@@ -21,6 +22,7 @@ function App() {
   const [backendConnected, setBackendConnected] = useState(true);
   const [streamStatus, setStreamStatus] = useState<StreamStatus>('IDLE');
   const [currentGraph, setCurrentGraph] = useState<PlantGraph | null>(null);
+  const [restoredPlant, setRestoredPlant] = useState<{ id: string; graph: PlantGraph } | null>(null);
   const [topologyValidation, setTopologyValidation] = useState<ValidationResult | null>(null);
   const [snapshot, setSnapshot] = useState<SimulationSnapshot | null>(null);
   const [events, setEvents] = useState<SimulationEvent[]>([]);
@@ -244,6 +246,7 @@ function App() {
           <NavItem icon={<Factory />} label="Plant Builder" active={viewMode==='BUILDER'} onClick={() => setViewMode('BUILDER')} collapsed={sidebarCollapsed} />
           <NavItem icon={<Activity />} label="Simulation" active={viewMode==='SIMULATION'} onClick={() => setViewMode('SIMULATION')} collapsed={sidebarCollapsed} />
           <NavItem icon={<Cpu />} label="ACAMIS Intelligence" active={viewMode==='ACAMIS'} onClick={() => setViewMode('ACAMIS')} collapsed={sidebarCollapsed} />
+          <NavItem icon={<Clock3 />} label="Operations History" active={viewMode==='HISTORY'} onClick={() => setViewMode('HISTORY')} collapsed={sidebarCollapsed} />
           
           <div className={`mt-8 mb-2 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:block whitespace-nowrap ${sidebarCollapsed ? 'md:hidden' : ''}`}>Future Modules</div>
           <NavItem icon={<Cpu />} label="Optimize Plant" active={viewMode==='OPTIMIZATION'} onClick={() => setViewMode('OPTIMIZATION')} collapsed={sidebarCollapsed} />
@@ -396,7 +399,9 @@ function App() {
             aria-hidden={viewMode !== 'BUILDER'}
             inert={viewMode !== 'BUILDER'}
           >
-            <Blueprint 
+            <Blueprint
+                key={restoredPlant?.id ?? 'initial'}
+                initialGraph={restoredPlant?.graph}
                 isFocusMode={isFocusMode} 
                 setIsFocusMode={setIsFocusMode}
                 isActive={viewMode === 'BUILDER'}
@@ -441,6 +446,19 @@ function App() {
           {viewMode === 'ACAMIS' && (
             <AcamisConsole simulationId={activeSimId} snapshot={snapshot} graph={currentGraph} onLocate={locateEquipment} onOpenSimulation={() => setViewMode('SIMULATION')} />
           )}
+          {viewMode === 'HISTORY' && <OperationsHistory onRestore={state => {
+            const graph = state.configuration.plant;
+            setCurrentGraph(graph);
+            setRestoredPlant({ id: state.id, graph });
+            simulatedGraphRef.current = plantSimulationSignature(graph);
+            latestSnapshotRef.current = null;
+            setSnapshot(null);
+            setActiveSimId(state.id);
+            setSimState(state);
+            setEvents(state.events);
+            setErrorMessage(null);
+            setViewMode('SIMULATION');
+          }} />}
         </div>
       </div>
       </div>

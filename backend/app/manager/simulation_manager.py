@@ -3,9 +3,10 @@ from app.engine.simulator import SteelSimEngine
 from app.models.schemas import SimulationConfiguration, SimulationState, SimulationStatus
 
 class SimulationManager:
-    def __init__(self, max_simulations: int = 50):
+    def __init__(self, max_simulations: int = 50, history=None):
         self._simulations: Dict[str, SteelSimEngine] = {}
         self.max_simulations = max_simulations
+        self.history = history
 
     def _evict_inactive_simulation(self) -> None:
         inactive = sorted(
@@ -24,6 +25,8 @@ class SimulationManager:
             self._evict_inactive_simulation()
         sim = SteelSimEngine(config)
         self._simulations[sim.id] = sim
+        if self.history is not None:
+            self.history.attach(sim)
         return sim
 
     def get_simulation(self, sim_id: str) -> Optional[SteelSimEngine]:
@@ -35,6 +38,7 @@ class SimulationManager:
     def delete_simulation(self, sim_id: str) -> bool:
         sim = self._simulations.get(sim_id)
         if sim:
+            sim.persist_history()
             if sim._task and not sim._task.done():
                 sim._task.cancel()
             del self._simulations[sim_id]

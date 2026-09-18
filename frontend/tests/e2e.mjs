@@ -15,6 +15,7 @@ const browser = await puppeteer.launch({
   ...(executablePath ? { executablePath } : {}),
 });
 const page = await browser.newPage();
+await page.setViewport({ width: 1440, height: 1000 });
 page.setDefaultTimeout(15_000);
 const consoleIssues = [];
 page.on('console', message => {
@@ -92,10 +93,11 @@ try {
   await new Promise(resolve => setTimeout(resolve, 500));
   await clickButton('Rolling mill');
   await page.waitForFunction(() => document.body.textContent?.includes('AUTONOMOUS_PROCEDURE_EXECUTED'));
-  await page.waitForFunction(() => document.body.textContent?.includes('Autonomous recovery verified'));
+  await page.waitForFunction(() => document.body.textContent?.includes('Simulated recovery complete'), { timeout: 30_000 });
   await page.select('select', 'OBSERVE');
   await new Promise(resolve => setTimeout(resolve, 500));
   await clickButton('Furnace stability');
+  await page.waitForFunction(() => document.body.textContent?.includes('Furnace instability') && !document.querySelector('select')?.disabled);
   await page.select('select', 'AUTONOMOUS_SIMULATION');
   await page.waitForFunction(() => document.body.textContent?.includes('HUMAN_VERIFICATION_REQUIRED'));
   await page.waitForFunction(() => document.body.textContent?.includes('STABILIZED'));
@@ -129,6 +131,26 @@ try {
   await page.waitForFunction(() => document.body.textContent?.includes('No plant is configured'));
   await clickButton('Overview');
   await page.waitForFunction(() => document.body.textContent?.includes('Plant Overview'));
+
+  await clickButton('Operations History');
+  const archivedRun = await page.evaluate(async id => {
+    const runs = await fetch('/api/history/runs').then(r => r.json());
+    return runs.find(r => r.simulation_id === id && r.tick > 0);
+  }, createdSimulationId);
+  assert.ok(archivedRun, 'Deleted simulation must remain in history');
+  await page.waitForSelector(`[data-run-id="${archivedRun.id}"]`);
+  await page.click(`[data-run-id="${archivedRun.id}"]`);
+  await page.waitForFunction(() => document.body.textContent?.includes('Download incident report'));
+  await clickButton('Play replay');
+  await page.waitForFunction(() => Number(document.querySelector('input[aria-label="Replay frame"]')?.value) > 0);
+  await clickButton('Pause replay');
+  if (process.env.STEELSIM_HISTORY_SCREENSHOT) await page.screenshot({ path: process.env.STEELSIM_HISTORY_SCREENSHOT });
+  await clickButton('Restore as paused session');
+  await page.waitForFunction(() => document.body.textContent?.includes('Simulation Control Center'));
+  await page.waitForFunction(() => [...document.querySelectorAll('span')].some(e => e.textContent?.trim() === 'PAUSED'));
+  await clickButton('Plant Builder');
+  await page.waitForSelector('.react-flow__node');
+  assert.equal(await page.$$eval('.react-flow__node', nodes => nodes.length), 10);
 
   assert.deepEqual(consoleIssues, []);
   console.log('SteelSim browser smoke test passed.');

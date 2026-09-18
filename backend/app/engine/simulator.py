@@ -1,6 +1,8 @@
 import asyncio
 import uuid
 import random
+import sqlite3
+import logging
 from collections import deque
 from datetime import datetime, timedelta, timezone
 
@@ -37,6 +39,10 @@ class SteelSimEngine:
         self.acamis_last_resolution: dict | None = None
         self.acamis_recovery_tick: int | None = None
         self.acamis_impact: dict | None = None
+        from app.acamis.multivariate import initial_state
+        self.signal_monitor = initial_state()
+        self._history_store = None
+        self.history_error = None
         from app.acamis import detector
         detector.reset(self)
         self.rolling_disturbance: dict[str, float] = {}
@@ -309,6 +315,7 @@ class SteelSimEngine:
         return event
 
     def _publish_snapshot(self) -> None:
+        self.persist_history()
         snapshot = self.get_snapshot()
         self._snapshots.append(snapshot)
         for queue in tuple(self._subscribers):
@@ -318,6 +325,16 @@ class SteelSimEngine:
                 except asyncio.QueueEmpty:
                     pass
             queue.put_nowait(snapshot)
+
+    def persist_history(self):
+        if self._history_store is not None:
+            try:
+                self._history_store.record(self)
+                self.history_error = None
+            except (OSError, sqlite3.Error) as exc:
+                if self.history_error is None:
+                    logging.getLogger(__name__).error("History write failed: %s", exc)
+                self.history_error = "History storage unavailable; live simulation continues."
 
     def _state_changed(self) -> None:
         self.state_version += 1
@@ -399,6 +416,9 @@ class SteelSimEngine:
             self._task = None
 
     def reset(self):
+        self.persist_history()
+        if self._history_store is not None:
+            self.history_run_id = f"run_{uuid.uuid4().hex}"
         if self._task and not self._task.done():
             self._task.cancel()
             self._task = None
@@ -410,6 +430,8 @@ class SteelSimEngine:
         self.speed = "1x"
         self.rng = random.Random(self.seed)
         self.acamis_scenario = None
+        from app.acamis.multivariate import initial_state
+        self.signal_monitor = initial_state()
         from app.acamis import detector
         detector.reset(self)
         self.rolling_disturbance.clear()
@@ -483,6 +505,8 @@ class SteelSimEngine:
                 self._calculate_telemetry()
                 from app.acamis.detector import evaluate
                 evaluate(self)
+                from app.acamis.multivariate import evaluate as evaluate_signals
+                evaluate_signals(self)
                 from app.acamis.service import advance_recovery
                 advance_recovery(self)
                 self._state_changed()

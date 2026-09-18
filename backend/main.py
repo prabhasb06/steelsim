@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from app.api.routes import router
 from app.api.plant import router as plant_router
 from app.api.acamis import router as acamis_router
+from app.api.history import router as history_router
 
 app = FastAPI(title="SteelSim Backend")
 
@@ -45,6 +46,7 @@ app.add_middleware(
 app.include_router(router)
 app.include_router(plant_router)
 app.include_router(acamis_router)
+app.include_router(history_router)
 
 frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
 if os.path.isdir(frontend_dist):
