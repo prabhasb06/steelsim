@@ -151,7 +151,7 @@ export default defineConfig({
     },
 
     footer: {
-      message: 'SteelSim is complete and reliable for its defined investor-facing MVP workflow. It is not presented as production-certified industrial control software.',
+      message: 'SteelSim is a simulation-only engineering MVP. Verify the live deployment before a presentation; no physical plant control is provided.',
       copyright: 'Copyright © 2026 SteelSim. Non-certified engineering digital twin.'
     }
   }
