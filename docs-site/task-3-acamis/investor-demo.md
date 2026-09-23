@@ -1,82 +1,25 @@
-# 36. ACAMIS Investor Demonstration Script
+# 36. ACAMIS investor demonstration
 
-This structured, repeatable 5-minute demonstration script showcases the complete capabilities of ACAMIS Intelligence to partners, investors, and industrial operators.
+The [full product demo](/getting-started/investor-demo) covers Plant Builder, Simulation, ACAMIS, and Operations History. This shorter route focuses on ACAMIS's response to simulated incidents.
 
----
+## Normal plant
 
-## Demonstration Flow Overview
+Load **Demo** in Plant Builder and start the plant from **Simulation** with **Run Simulation**. Open **ACAMIS Intelligence**. Plant health should show normal operation, and the automatic rolling monitor becomes active while the simulation runs.
 
-<pre class="mermaid">
-flowchart LR
-    Step1["1. Baseline Simulation<br/>• Load 10-Node TMT<br/>• Run at 1x Clock<br/>• Verify Normal Health"]
-    Step2["2. Low-Risk Scenario<br/>• Rolling Mill Slowdown<br/>• Autonomous Recovery<br/>• 12-Tick Clock Advance"]
-    Step3["3. Severe Incident<br/>• Furnace Instability<br/>• Automatic Containment<br/>• Human Risk Modal Gate"]
-    Step4["4. Automatic Detection<br/>• Telemetry Drift Demo<br/>• 3-Tick Persistence Rule<br/>• Evidence Trace Capture"]
-    Step5["5. Optional AI Model<br/>• BYOK Gemini Review<br/>• Context Anonymization<br/>• Read-Only Advisory Chat"]
+## Defined low-risk recovery
 
-    Step1 --> Step2 --> Step3 --> Step4 --> Step5
-</pre>
+In **Scenario Control**, select **Rolling mill**. Show the **Manual scenario** origin and the affected equipment. Set the operating mode to **Autonomous Simulation**. ACAMIS schedules an approved simulated procedure; after 12 running ticks, the incident closes and the audit records recovery. Pause freezes the simulated countdown.
 
----
+## Severe incident requiring a person
 
-## Step-by-Step Demonstration Script
+Select **Furnace stability**. ACAMIS applies simulated containment and shows the human-intervention prompt. The final high-risk procedure waits for explicit human verification. You can demonstrate the approval control or leave the plant stabilized while explaining the gate.
 
-### 1. Launch & Baseline Verification (1 Minute)
-1. Open the SteelSim web app at `http://127.0.0.1:5173/` (or `http://localhost:5173/`).
-2. In the Plant Builder canvas, click **TMT 10-Node Demo** to populate the pre-validated mini-mill topology.
-3. In the top control bar, click **Run** (speed: 1x).
-4. Click the **ACAMIS** tab in the top navigation.
-5. **Key Talking Point:** Show that ACAMIS connects immediately to the live digital twin:
-   * Plant Health: `NORMAL`
-   * Automatic Monitoring: `Active · Normal`
-   * Specialist Intelligence: 6 domains evaluating shared telemetry in real time.
+## Automatic throughput detection
 
----
+Clear the scenario. Click **Demonstrate telemetry drift** in **Automatic Monitoring**. The button reduces simulated rolling capacity; the backend detector evaluates the resulting readings for three running ticks. An incident then appears with **Telemetry detector** as its origin. The detector follows a defined throughput rule; it does not diagnose unknown physical failures.
 
-### 2. Low-Risk Autonomous Recovery (Manual scenario) (1 Minute)
-1. In the **Scenario Control** toolbar, click **Rolling mill**.
-2. **Observe:**
-   * Plant Health transitions to `INCIDENT` (Yellow/Warning).
-   * Origin badge clearly shows **Manual scenario**.
-   * **Incident Impact** deck displays mill throughput cut from 70 t/h to 31.5 t/h.
-   * Click **Locate in plant** to demonstrate cross-navigation: view jumps to Plant Builder and centers on the affected finishing mill.
-3. Switch back to ACAMIS and change the Operating Mode dropdown to **AUTONOMOUS SIMULATION**.
-4. **Observe:**
-   * Recovery Plan status updates to `RECOVERING`.
-   * The countdown timer announces: *"Autonomous simulated recovery in 12 simulation ticks."*
-   * As the simulation clock reaches tick $T + 12$, the incident closes, plant health returns to `NORMAL`, and the audit timeline records `INCIDENT_RECOVERED`.
+## Recorded evidence and optional model review
 
----
+Open **Operations History** to replay frames, inspect audit evidence, and download the JSON report. Restore creates a separate paused session. If you have a permitted provider key and quota, **Test & connect** in the model gateway makes a real generation request, after which **Request model review** sends the current simulated plant context. The provider's text is advisory and does not execute a procedure.
 
-### 3. Severe Incident & Human-in-the-Loop Safety Gate (1.5 Minutes)
-1. While still in **AUTONOMOUS SIMULATION** mode, click **Furnace stability** in Scenario Control.
-2. **Observe:**
-   * Plant Health immediately escalates to `INCIDENT` (Red/High).
-   * Safe containment (`reduce_heat_load`) is automatically dispatched to protect equipment.
-   * Plant Health shifts to `STABILIZED`.
-   * **Alert Modal Pops Up:** ACAMIS halts final recovery with `HUMAN_VERIFICATION_REQUIRED`.
-3. **Key Talking Point:** Point out the safety guarantee:
-   > *"Even in fully autonomous simulation mode, ACAMIS policy strictly prevents the AI from restarting high-temperature furnace arcs without explicit human sign-off."*
-4. Click **Apply human intervention** in the modal.
-5. Plant health returns to `NORMAL`, and the audit log records the authorized operator sign-off.
-
----
-
-### 4. Automatic Anomaly Detection (Task 3.1) (1 Minute)
-1. Reset scenarios by clicking **Reset scenario**.
-2. In the **Automatic Monitoring** card, click **Inject throughput anomaly (demo)**.
-3. **Observe:**
-   * The persistence counter increments live: `Watching (1/3)` $\rightarrow$ `Watching (2/3)` $\rightarrow$ `Detected (3/3)`.
-   * Origin badge displays **Telemetry detector** (not a manual scenario!).
-   * Expand the incident details to show the captured **Evidence Payload**: live throughput trace, threshold deficit ($45\% < 75\%$), and affected rolling mill node IDs.
-4. With autonomy enabled, the 12-tick countdown initiates and clears the detector anomaly automatically.
-
----
-
-### 5. Optional BYOK AI Model Review (30 Seconds)
-1. In the **Advisory Model Gateway** card, enter a valid Gemini API key.
-2. Click **Connect model**.
-3. Select `gemini-2.5-flash` and type:
-   > *"Review current plant metrics and advise on cooling water margins."*
-4. Receive clean, structured industrial reasoning based on the live simulation snapshot.
-5. Emphasize that the API key is transient and held strictly in volatile process memory.\n
+Use the [Task 4 reference](/task-4-history/overview) for storage limits and the [model gateway reference](/task-3-acamis/model-gateway) for key and data-sharing details.

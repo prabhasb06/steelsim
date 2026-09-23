@@ -133,9 +133,9 @@ POST /api/simulations/{sim_id}/acamis/model/connect
 ```json
 {
   "provider": "GEMINI",
-  "model": "gemini-2.5-flash",
-  "api_key": "AIzaSySanitizedExampleKey",
+  "model": "auto",
+  "api_key": "YOUR_KEY",
   "base_url": null
 }
 ```
-* **Security Behavior:** Keys are stored strictly in volatile memory and never returned in response payloads.\n
+* **Connection behavior:** The gateway verifies a real text-generation response before reporting `connected: true`. Keys are held in backend memory for the simulation and omitted from responses and Task 4 history.

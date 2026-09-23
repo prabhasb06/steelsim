@@ -23,13 +23,10 @@ export default defineConfig({
       { text: 'Plant Builder', link: '/task-1-builder/overview' },
       { text: 'Simulation', link: '/task-2-simulation/overview' },
       { text: 'ACAMIS', link: '/task-3-acamis/overview' },
+      { text: 'Operations History', link: '/task-4-history/overview' },
       { text: 'Reference', link: '/reference/standard-tmt-topology' },
       { text: 'Project', link: '/project/architecture' },
-      { text: 'v1.0.0-mvp', items: [
-        { text: 'Commit: 416cec9', link: 'https://github.com/prabhasb06/steelsim/commit/416cec95e3717c4081d689d9bd84329d30ffcba9' },
-        { text: 'Local Backend (8000)', link: 'http://127.0.0.1:8000/api/health' },
-        { text: 'Local Frontend (5173)', link: 'http://localhost:5173/' }
-      ]}
+      { text: 'Source', link: 'https://github.com/prabhasb06/steelsim' }
     ],
 
     sidebar: {
@@ -93,6 +90,13 @@ export default defineConfig({
             { text: '35. Testing & verification', link: '/task-3-acamis/testing' },
             { text: '36. Investor demonstration', link: '/task-3-acamis/investor-demo' },
             { text: '37. Limitations & roadmap', link: '/task-3-acamis/limitations-and-roadmap' }
+          ]
+        },
+        {
+          text: 'Task 4 — Operations History',
+          collapsed: false,
+          items: [
+            { text: 'Task 4 overview', link: '/task-4-history/overview' }
           ]
         },
         {

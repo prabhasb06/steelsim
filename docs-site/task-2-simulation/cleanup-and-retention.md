@@ -5,7 +5,7 @@ Because SteelSim executes simulations in memory, active simulation instances mus
 ## Bounded simulation retention
 
 The backend `SimulationManager` enforces a bounded capacity on concurrent simulation instances:
-1. **Active capacity limit:** The manager retains up to 10 simulation instances simultaneously.
+1. **Active capacity limit:** The manager retains up to 50 simulation instances simultaneously.
 2. **Automatic eviction:** When capacity is reached, the oldest inactive simulation (in state `PAUSED`, `COMPLETED`, or `READY`) is automatically evicted from memory.
 3. **Explicit deletion:** Clients can destroy obsolete simulations directly using the REST endpoint:
    ```http
@@ -27,3 +27,5 @@ flowchart TD
 </pre>
 
 Purely visual adjustments (such as dragging an equipment card to a new position) do not invalidate the simulation, allowing uninterrupted live monitoring while fine-tuning canvas layouts.
+
+Task 4 records the last checkpoint, telemetry frames, and policy audit in SQLite. Deleting an active simulation removes it from memory but leaves its recorded run available under **Operations History**. A restored run creates a new paused session. The SQLite journal has no automatic retention limit; operators must manage disk space and backups. See [Operations History](/task-4-history/overview).

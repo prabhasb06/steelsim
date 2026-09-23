@@ -35,7 +35,7 @@ flowchart TD
 5. **Policy & Risk Gating:** Operating mode (`OBSERVE`, `ADVISORY`, `AUTONOMOUS_SIMULATION`) dictates whether containment or recovery can proceed automatically, or if human confirmation is mandatory.
 6. **Simulated Execution:** Approved procedures modify internal digital-twin parameters (e.g., reducing heat load by 22%, pacing raw material to 80%, or clearing mill capacity constraints).
 7. **Recovery Verification:** The detector evaluates live telemetry to ensure the asset has returned to normal operating bounds before closing the incident.
-8. **Audit Trail Recording:** Every scenario, autonomy mode change, procedure execution, and approval is written to an in-memory chronological audit log.
+8. **Audit Trail Recording:** Policy events appear in the live audit and are archived with the run in Task 4's local SQLite history.
 
 ---
 

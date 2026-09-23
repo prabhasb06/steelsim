@@ -1,44 +1,23 @@
 # 45. Testing
 
-The SteelSim platform maintains continuous quality verification through a multi-tier test matrix covering backend unit tests, frontend component utilities, static analysis, and headless browser automation.
+Run these checks from the SteelSim repository root after installing the dependencies described in [Quick start](/getting-started/quick-start).
 
-## Test suite execution
-
-### 1. Backend tests (Pytest)
 ```powershell
-# Run from repository root (using root pytest.ini)
-python -m pytest backend/tests -v
-```
-- **Coverage:** **72 passing tests** across 4 dedicated test suites:
-  - `backend/tests/test_topology.py` (Task 1: Topology graph, port validation, auto-setup)
-  - `backend/tests/test_simulation.py` (Task 2: Deterministic engine, material balance, utility capacity, WebSocket auth)
-  - `backend/tests/test_acamis.py` (Task 3: 8-stage evaluator, scenario injection, autonomous mitigation, risk gates, gateway key isolation)
-  - `backend/tests/test_monitoring.py` (Task 3.1: Automatic throughput anomaly detection, 3-tick rule, evidence payload, synthetic drift)
-- **Configuration:** Root `pytest.ini` specifies `pythonpath = backend` and `testpaths = backend/tests`, ensuring clean discovery from any terminal context.
-- **Dedicated Task 3 Guide:** See [ACAMIS Testing & Verification Suite](/task-3-acamis/testing) for detailed test breakdown.
-
-### 2. Frontend unit tests (Node Test Runner)
-```powershell
+python -m pytest backend/tests -q
 npm --prefix frontend test
-```
-- **Coverage:** 4 tests in `frontend/tests/simulation-utils.test.ts`.
-- **Validation scopes:** Topological process ordering, cross-simulation snapshot rejection, monotonic version guards preventing state rewind, and layout-only edit preservation.
-
-### 3. Static analysis & compilation
-```powershell
-npm --prefix frontend run lint    # Oxlint static analysis (0 errors, 0 warnings across 20 files)
-npm --prefix frontend run build   # TypeScript strict type checking & Vite bundle
-```
-
-### 4. Documentation site static build
-```powershell
+npm --prefix frontend run lint
+npm --prefix frontend run build
 npm --prefix docs-site run docs:build
 ```
-- Compiles all 53+ documentation pages, styles, search index, and Mermaid diagrams with zero syntax errors or broken links.
 
-### 5. Headless browser E2E smoke test (Puppeteer)
+The browser smoke test needs a running frontend and backend, or a single backend serving the built frontend:
+
 ```powershell
 npm --prefix frontend run test:e2e
 ```
-- Validates the complete 18-step user journey from demo load through simulation run, pause, reset, canvas clear, ACAMIS operations console inspection, and obsolete simulation cleanup, ensuring zero console errors.
 
+The test covers Builder demo loading, simulation controls, ACAMIS scenarios and approval gates, model connection through a local test provider, history replay, and paused restoration. It uses a synthetic key and does not consume provider quota.
+
+At the last implementation verification, 85 backend tests, four frontend utility tests, the browser smoke test, lint, type checking, and the production build passed. The Vite build had a non-blocking large-bundle warning. A separate live-site check is still required before a public demonstration.
+
+VitePress builds the documentation and search index. A successful build checks compilation and page rendering; it does not prove every external link or the public deployment is available.

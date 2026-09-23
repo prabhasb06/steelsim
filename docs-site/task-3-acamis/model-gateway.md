@@ -1,66 +1,38 @@
-# 32. Advisory Model Gateway (BYOK)
+# 32. Advisory Model Gateway
 
-ACAMIS includes an optional **Advisory Model Gateway** enabling plant operators to connect modern large language models (such as Google Gemini) to assist with incident root-cause analysis and operational strategy.
+ACAMIS can send its current simulated plant snapshot, incident evidence, specialist findings, and approved recovery plan to an external text model for an advisory review. The model can explain the situation; it cannot call SteelSim procedures or override the deterministic safety gates.
 
----
+## Connect a model
 
-## Architectural Separation & Safety Perimeter
+1. Start a SteelSim simulation and open **ACAMIS Intelligence**.
+2. In **Advisory Model Gateway**, choose **Google Gemini** or **OpenAI-compatible**.
+3. Paste your own API key. For an OpenAI-compatible service, also enter its model ID and API base URL, usually ending in `/v1`.
+4. Click **Test & connect**. SteelSim makes a small generation request. A successful model-list request alone does not mark the connection as verified. Your provider may count or charge for this test.
+5. Click **Request model review** to receive advice about the current plant state. The review sends the latest simulated telemetry and incident information.
 
-To guarantee industrial safety and air-gapped compliance, the Model Gateway operates strictly as a read-only advisory layer:
+For Gemini, the gateway queries the key's current model catalog and can select a compatible text model automatically. It calls the standard `models/{model}:generateContent` endpoint. A key without access to a compatible model, generation permission, or available quota will not verify. The interface reports connection and review errors; a failed review marks the connection for retesting.
 
-<pre class="mermaid">
-flowchart TD
-    Cloud["External AI Provider<br/>(Google AI Studio / Gemini API)"]
-    Gateway["ACAMIS Advisory Gateway<br/>• Transient In-Memory Key<br/>• Sanitized Context Bundler<br/>• Response Schema Parser"]
-    Policy["Deterministic Policy & Safety Gate<br/>• Enforces Role Permissions<br/>• Rejects Hallucinated Actions<br/>• Blocks High-Risk Autonomy"]
-    Engine["SteelSim Simulation Core<br/>(Deterministic Digital Twin)"]
+## Data and control boundaries
 
-    Cloud -->|"Advisory Recommendations (Read-Only)"| Gateway
-    Gateway -->|"Validated Structured Advice"| Policy
-    Policy -->|"Operator-Approved Procedures Only"| Engine
-</pre>
+- The supplied key is held in backend memory for the active simulation. ACAMIS history does not archive the key, prompts, or model replies. Disconnect, simulation deletion, and backend restart clear the connection.
+- A connected external provider receives simulation data over the network. The context includes equipment IDs, telemetry, incident evidence, and policy information. **This is not an air-gapped or anonymized mode.** Use only with data you are allowed to send to that provider.
+- Model output is advisory text. Existing approved procedures, simulation modes, and human verification rules determine actions independently of that text.
+- The public MVP has no individual accounts or per-user model-key isolation. Do not put a personal model key into a shared public demonstration session.
 
-### Fundamental Security Guarantees
-1. **Bring-Your-Own-Key (BYOK):** SteelSim does **not** ship with hardcoded API keys and does not read keys from `.env` files. The operator supplies their own Google AI Studio key at runtime.
-2. **Transient In-Memory Storage:** The API key is stored exclusively in process memory associated with the active simulation ID. It is **never** written to disk, SQLite/PostgreSQL databases, or server log files.
-3. **Immediate Revocation:** Clicking **Disconnect model** or deleting the simulation instance immediately purges the credential from memory.
-4. **Read-Only Context:** The model is provided with a sanitized, anonymous snapshot of current telemetry (temperatures, flow rates, throughputs, and active alarm codes). It has **zero direct actuation authority**.
-5. **No Autonomous LLM Actuation:** Operational procedures cannot be triggered directly by LLM text output. Every procedure must match a registered, deterministic procedure definition and satisfy all active safety gates.
+## API example
 
----
+Replace `{id}` with a live simulation ID. Keep the key out of committed scripts and URLs.
 
-## Supported Models & Fallback Hierarchy
-
-The gateway connects to the standard Google Gemini REST endpoint:
-
-```
-POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
-```
-
-The gateway maintains a tested fallback catalog:
-1. `gemini-2.5-flash` (Default: Fast, low latency, structured JSON reasoning)
-2. `gemini-1.5-pro` (Deep metallurgical analysis and complex scenario evaluation)
-3. `gemini-1.5-flash` (Reliable baseline fallback)
-
----
-
-## REST API Integration
-
-### Connect Model Key
 ```bash
-curl -X POST http://127.0.0.1:8000/api/simulations/{id}/acamis/model/connect \
+curl -X POST "http://127.0.0.1:8000/api/simulations/{id}/acamis/model/connect" \
   -H "Content-Type: application/json" \
-  -d '{"api_key": "AIzaSy...", "model_name": "gemini-2.5-flash"}'
-```
+  -d '{"provider":"GEMINI","model":"auto","api_key":"YOUR_KEY"}'
 
-### Advisory Chat Query
-```bash
-curl -X POST http://127.0.0.1:8000/api/simulations/{id}/acamis/model/chat \
+curl -X POST "http://127.0.0.1:8000/api/simulations/{id}/acamis/model/chat" \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Analyze thermal load on the induction furnace and evaluate water flow margins."}'
+  -d '{"message":"Review the current simulated incident and its remaining risk."}'
+
+curl -X POST "http://127.0.0.1:8000/api/simulations/{id}/acamis/model/disconnect"
 ```
 
-### Disconnect & Purge
-```bash
-curl -X POST http://127.0.0.1:8000/api/simulations/{id}/acamis/model/disconnect
-```\n
+The key above is a placeholder. The request and response contract is defined in [`backend/app/api/acamis.py`](https://github.com/prabhasb06/steelsim/blob/main/backend/app/api/acamis.py).

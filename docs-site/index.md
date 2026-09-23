@@ -1,10 +1,10 @@
 # SteelSim Documentation
 
-SteelSim is an industrial digital-twin MVP for MSME induction-furnace and TMT rebar manufacturing facilities. It pairs a visual plant-topology builder with a backend-authoritative deterministic simulation engine.
+SteelSim is an industrial digital-twin MVP for MSME induction-furnace and TMT rebar manufacturing facilities. It pairs a visual plant-topology builder with a backend-authoritative deterministic simulation engine and a recorded operations history.
 
 > **Core tenet:** “SteelSim creates the factory; ACAMIS understands the factory.”
 >
-> SteelSim provides the verifiable plant-builder and deterministic physical simulation foundation (Tasks 1 & 2). ACAMIS provides the operational intelligence, continuous telemetry anomaly detection, and policy-gated recovery layer (Tasks 3 & 3.1). SteelSim is an engineering digital twin and investor-facing MVP; it does not directly control physical machinery.
+> SteelSim provides the plant builder and deterministic simulation foundation (Tasks 1 & 2). ACAMIS provides defined anomaly detectors, a policy-gated recovery workflow, and operational history (Tasks 3, 3.1 & 4). This MVP does not control physical machinery.
 
 ---
 
@@ -35,6 +35,11 @@ SteelSim is an industrial digital-twin MVP for MSME induction-furnace and TMT re
 <a href="/task-3-acamis/overview" class="openai-card">
   <div class="openai-card-title">Task 3: ACAMIS Intelligence</div>
   <div class="openai-card-desc">Operational intelligence, 6 specialist domains, rolling throughput anomaly detection, and policy gates.</div>
+</a>
+
+<a href="/task-4-history/overview" class="openai-card">
+  <div class="openai-card-title">Task 4: Operations History</div>
+  <div class="openai-card-desc">Recorded runs, telemetry replay, signal evidence, incident reports, and paused restoration.</div>
 </a>
 
 <a href="/task-2-simulation/control-center" class="openai-card">
@@ -81,18 +86,16 @@ npm run dev
 
 ---
 
-## Verified Baseline Status
+## Current implementation status
 
-| Component | Target Metric | Verified Status |
+| Component | Current status | Verification |
 | :--- | :--- | :--- |
-| **Commit Hash** | `416cec95e3717c4081d689d9bd84329d30ffcba9` | **Verified** (`main` clean) |
-| **Backend Tests** | 72 test cases | **72 / 72 Passed** (`pytest backend/tests`) |
-| **Frontend Unit Tests** | 4 test cases | **4 / 4 Passed** (`node --test`) |
-| **Frontend Linter** | 0 warnings, 0 errors | **Passed** (`oxlint`) |
-| **TypeScript Compilation** | Strict type-check | **Passed** (`tsc --noEmit`) |
-| **Task 3.1 Detector** | 3-tick persistence & recovery | **Verified** (100% test coverage) |
-| **Browser E2E Workflow** | Headless smoke test | **Passed** (0 console errors) |
-| **Standard Demo Topology** | 10 nodes, 22 connections | **Valid** (0 errors, 0 warnings) |
+| **Plant Builder and Simulation** | Demo plant, typed connections, live control center | Local browser smoke test passed. |
+| **ACAMIS** | Manual scenarios, rolling-throughput detection, policy-gated recovery | Backend and browser tests passed. |
+| **Operations History** | SQLite run journal, frame replay, report, paused restore | Backend and browser tests passed. |
+| **Advisory Model Gateway** | Gemini and OpenAI-compatible keys, real generation check | Verified with a local test provider; a user's actual provider key needs its own live test. |
+| **Test suite at the last code verification** | 85 backend tests and 4 frontend unit tests | Passed; type check, lint, production build, and browser smoke test also passed. |
+| **Public deployment** | Site-specific status | Verify the live application URL and storage configuration before a presentation. |
 
 ---
 

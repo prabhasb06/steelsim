@@ -11,14 +11,15 @@ SteelSim is configured through environment variables on both the backend service
 | **`STEELSIM_ALLOWED_ORIGINS`**| Backend | `http://127.0.0.1:5173,http://localhost:5173` | Comma-separated list of allowed CORS origins for browser security. |
 | **`VITE_API_PROXY_TARGET`** | Frontend | `http://127.0.0.1:8000` | Backend upstream target URL used by the Vite development proxy. |
 | **`STEELSIM_BASE_URL`** | E2E Tests | `http://127.0.0.1:5173/` | Target frontend URL evaluated during Puppeteer browser test execution. |
+| **`STEELSIM_HISTORY_DB`** | Backend | `data/operations.sqlite3` | SQLite operations journal path. Use a persistent volume for durable hosted history. |
 
 ## BYOK model keys (Task 3 design rule)
 
 > [!NOTE]
 > **No Environment Variables for LLM Credentials:**
-> SteelSim does **not** load external LLM credentials (such as Google AI Studio / Gemini API keys) from `.env` files or system environment variables. In adherence to air-gapped industrial security standards, external model connectivity is strictly Bring-Your-Own-Key (BYOK), held transiently in server memory per active simulation instance, and erased upon simulation termination or explicit disconnect. See [Advisory Model Gateway](/task-3-acamis/model-gateway) and [Security](/reference/security).
+> External model credentials are supplied in the ACAMIS interface and held in backend memory for the active simulation. Connecting an external provider sends the selected simulated plant context over the network. See [Advisory Model Gateway](/task-3-acamis/model-gateway) and [Security](/reference/security).
 
-## Secure deployment example
+## Shared demo key example
 
 ```powershell
 # Set shared secret in PowerShell before launching services
@@ -29,3 +30,4 @@ $env:VITE_STEELSIM_API_KEY=$env:STEELSIM_API_KEY
 $env:STEELSIM_ALLOWED_ORIGINS="https://demo.steelsim.internal"
 ```
 
+`VITE_STEELSIM_API_KEY` is embedded in the public frontend bundle at build time. It is not a private user credential or a substitute for accounts and authorization. Do not treat this shared-key setup as sufficient protection for a public multi-user service.
