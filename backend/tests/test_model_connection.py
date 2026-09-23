@@ -1,5 +1,6 @@
 import asyncio
 import json
+import socket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from types import SimpleNamespace
@@ -67,7 +68,7 @@ def test_invalid_base_urls_are_rejected(url):
         asyncio.run(gateway.connect(SimpleNamespace(), 'OPENAI_COMPATIBLE', 'test', 'fake', url))
 
 
-def test_actual_http_transport_uses_key_and_operational_context():
+def test_actual_http_transport_uses_key_and_operational_context(monkeypatch):
     requests = []
     class Provider(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -82,6 +83,7 @@ def test_actual_http_transport_uses_key_and_operational_context():
             self.end_headers()
             self.wfile.write(body)
 
+    monkeypatch.setenv('STEELSIM_ALLOW_LOCAL_MODEL_ENDPOINTS', '1')
     server = ThreadingHTTPServer(('127.0.0.1', 0), Provider)
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -98,3 +100,73 @@ def test_actual_http_transport_uses_key_and_operational_context():
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+@pytest.mark.parametrize('url', [
+    'https://127.0.0.1/v1/chat/completions',
+    'https://169.254.169.254/latest/meta-data',
+    'http://localhost/v1/chat/completions',
+])
+def test_model_transport_rejects_internal_addresses_by_default(monkeypatch, url):
+    monkeypatch.delenv('STEELSIM_ALLOW_LOCAL_MODEL_ENDPOINTS', raising=False)
+    with pytest.raises(ValueError, match='private or local|developer opt-in'):
+        gateway._request_json(url, api_key='fake', provider='OPENAI_COMPATIBLE', method='POST')
+
+
+def test_model_transport_rejects_private_dns_alias(monkeypatch):
+    monkeypatch.setattr(socket, 'getaddrinfo', lambda *args, **kwargs: [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, '', ('10.0.0.8', 443)),
+    ])
+    with pytest.raises(ValueError, match='private or local'):
+        gateway._request_json('https://model.example/v1', api_key='fake', provider='OPENAI_COMPATIBLE')
+
+
+def test_model_transport_does_not_follow_redirects_or_read_oversized_replies(monkeypatch):
+    monkeypatch.setenv('STEELSIM_ALLOW_LOCAL_MODEL_ENDPOINTS', '1')
+    requests = []
+
+    class Provider(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            requests.append(self.path)
+            if self.path == '/redirect':
+                self.send_response(302)
+                self.send_header('Location', '/secret')
+                self.end_headers()
+            elif self.path == '/large':
+                data = b'{' + b' ' * (gateway.MAX_MODEL_RESPONSE_BYTES + 1) + b'}'
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(data)
+            else:
+                self.send_response(200)
+                self.end_headers()
+
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Provider)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f'http://127.0.0.1:{server.server_port}'
+        with pytest.raises(ValueError, match='redirects are not allowed'):
+            gateway._request_json(f'{base}/redirect', api_key='fake', provider='OPENAI_COMPATIBLE')
+        assert requests == ['/redirect']
+        with pytest.raises(ValueError, match='oversized response'):
+            gateway._request_json(f'{base}/large', api_key='fake', provider='OPENAI_COMPATIBLE')
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_operator_message_size_is_bounded(monkeypatch):
+    sim = SimpleNamespace(acamis_model_config={
+        'provider': 'OPENAI_COMPATIBLE', 'model': 'test', 'api_key': 'fake',
+        'base_url': 'https://provider.example', 'connected': True,
+    })
+    monkeypatch.setattr(gateway, '_request_json', lambda *a, **k: pytest.fail('network request was made'))
+    with pytest.raises(ValueError, match='too long'):
+        asyncio.run(gateway.ask(sim, 'x' * (gateway.MAX_OPERATOR_MESSAGE_LENGTH + 1), {}))
+    assert sim.acamis_model_config['connected']

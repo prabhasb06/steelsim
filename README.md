@@ -67,6 +67,8 @@ Start a simulation, open ACAMIS Intelligence, select the provider, and paste you
 
 Use **Request model review** to send the current simulated telemetry, incident evidence, and approved recovery plan. Output remains advisory; it does not bypass the deterministic policy or approval gates. Connection errors identify key, permission, quota, or endpoint problems. Keys stay in server memory for that simulation and must be re-entered after disconnect, session replacement, or backend restart. Do not paste keys into chat, source files, or documentation.
 
+Model requests reject private and loopback destinations, redirects, oversized responses, and excessively long operator messages. For a **local development server only**, set `STEELSIM_ALLOW_LOCAL_MODEL_ENDPOINTS=1` on the backend to permit `http://localhost` or `http://127.0.0.1` model endpoints. Never enable that opt-in on the public Render service. A custom OpenAI-compatible endpoint must have a publicly reachable HTTPS address.
+
 Gemini transport follows Google's [generateContent API](https://ai.google.dev/api/generate-content) and [model catalog API](https://ai.google.dev/api/models).
 
 - The backend checks temperature deviation (>40 °C), cooling flow (<75% of expected), and electrical demand (>112% of expected) for three consecutive running ticks. Baselines come from the simulator, not scenario labels or an external model. Concurrent deviations on one asset are grouped as correlated evidence, not a proven root cause.

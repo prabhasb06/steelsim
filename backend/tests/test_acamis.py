@@ -210,7 +210,7 @@ def test_model_gateway_verifies_connection_without_exposing_key(monkeypatch):
         "provider": "OPENAI_COMPATIBLE",
         "model": "test-model",
         "api_key": "secret-value",
-        "base_url": "http://127.0.0.1:11434/v1",
+        "base_url": "https://provider.example/v1",
     })
     assert response.status_code == 200
     assert response.json()["connected"] is True

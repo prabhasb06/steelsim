@@ -1,17 +1,50 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
+import os
+import socket
 from datetime import datetime, timezone
 from typing import Any
 from types import SimpleNamespace
 from urllib.parse import urlsplit, urlencode
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 SUPPORTED_PROVIDERS = {"OPENAI_COMPATIBLE", "GEMINI"}
 DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
+MAX_MODEL_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_OPERATOR_MESSAGE_LENGTH = 8000
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        return None
+
+
+def _validate_destination(url: str) -> None:
+    """Reject server-side requests to private services, including DNS aliases."""
+    try:
+        parsed = urlsplit(url)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("Invalid model endpoint URL") from exc
+    if not hostname or parsed.username or parsed.password or parsed.scheme not in {"https", "http"}:
+        raise ValueError("Invalid model endpoint URL")
+
+    allow_local = os.getenv("STEELSIM_ALLOW_LOCAL_MODEL_ENDPOINTS", "").lower() in {"1", "true", "yes"}
+    if parsed.scheme != "https" and not (allow_local and parsed.scheme == "http" and hostname in {"localhost", "127.0.0.1", "::1"}):
+        raise ValueError("Model endpoints must use HTTPS; local HTTP requires explicit developer opt-in")
+    try:
+        addresses = {ipaddress.ip_address(item[4][0]) for item in socket.getaddrinfo(hostname, port or (443 if parsed.scheme == "https" else 80), type=socket.SOCK_STREAM)}
+    except (OSError, ValueError) as exc:
+        raise ValueError("Unable to resolve the model endpoint hostname") from exc
+    if not addresses or any(not address.is_global for address in addresses):
+        if not (allow_local and hostname in {"localhost", "127.0.0.1", "::1"} and all(address.is_loopback for address in addresses)):
+            raise ValueError("Model endpoints cannot address private or local network services")
 
 
 def public_status(sim: Any) -> dict[str, Any]:
@@ -96,6 +129,7 @@ def _provider_error_message(status_code: int, detail: str) -> str:
 
 
 def _request_json(url: str, *, api_key: str, method: str = "GET", payload: dict[str, Any] | None = None, provider: str) -> dict[str, Any]:
+    _validate_destination(url)
     headers = {"Accept": "application/json"}
     if provider == "GEMINI":
         headers["x-goog-api-key"] = api_key
@@ -107,13 +141,18 @@ def _request_json(url: str, *, api_key: str, method: str = "GET", payload: dict[
         body = json.dumps(payload).encode("utf-8")
     request = Request(url, data=body, headers=headers, method=method)
     try:
-        with urlopen(request, timeout=45) as response:
-            result = json.loads(response.read().decode("utf-8"))
+        with build_opener(_NoRedirectHandler()).open(request, timeout=45) as response:
+            data = response.read(MAX_MODEL_RESPONSE_BYTES + 1)
+            if len(data) > MAX_MODEL_RESPONSE_BYTES:
+                raise ValueError("The model endpoint returned an oversized response")
+            result = json.loads(data.decode("utf-8"))
             if not isinstance(result, dict):
                 raise ValueError('The model endpoint returned an invalid JSON response')
             return result
     except HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
+        if 300 <= exc.code < 400:
+            raise ValueError("Model endpoint redirects are not allowed; use the provider's final HTTPS API URL") from exc
+        detail = exc.read(4096).decode("utf-8", errors="replace")
         raise ValueError(_provider_error_message(exc.code, detail.replace(api_key, '[REDACTED]'))) from exc
     except (URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise ValueError("Unable to reach the model endpoint or read its response. Check the URL, network, and provider availability.") from exc
@@ -127,16 +166,21 @@ async def connect(sim: Any, provider: str, model: str, api_key: str, base_url: s
         raise ValueError("Provider must be OPENAI_COMPATIBLE or GEMINI")
     if not model or not api_key:
         raise ValueError("Model name and API key are required")
+    if len(model) > 256 or len(api_key) > 4096 or (base_url and len(base_url) > 2048):
+        raise ValueError("Model connection details exceed the supported size")
     resolved_base = (base_url or "").strip().rstrip("/")
     if provider == "GEMINI":
         resolved_base = resolved_base or "https://generativelanguage.googleapis.com/v1beta"
     elif not resolved_base:
         raise ValueError("An HTTPS base URL is required for an OpenAI-compatible provider")
-    parsed = urlsplit(resolved_base)
+    try:
+        parsed = urlsplit(resolved_base)
+    except ValueError as exc:
+        raise ValueError("Invalid model endpoint URL") from exc
     if parsed.username or parsed.password or parsed.query or parsed.fragment or not parsed.hostname:
         raise ValueError('Use a base URL without credentials, query parameters, or fragments')
-    if parsed.scheme != 'https' and not (parsed.scheme == 'http' and parsed.hostname in {'127.0.0.1', 'localhost', '::1'}):
-        raise ValueError("Use HTTPS for remote providers; HTTP is allowed only for a local model server")
+    if parsed.scheme != 'https' and not (parsed.scheme == 'http' and parsed.hostname in {'127.0.0.1', 'localhost', '::1'} and os.getenv('STEELSIM_ALLOW_LOCAL_MODEL_ENDPOINTS', '').lower() in {'1', 'true', 'yes'}):
+        raise ValueError("Use HTTPS for remote providers; local HTTP requires explicit developer opt-in")
 
     available_models: list[str] = []
     model_changed = False
@@ -183,8 +227,13 @@ def disconnect(sim: Any) -> dict[str, Any]:
 
 async def ask(sim: Any, operator_message: str, acamis_context: dict[str, Any]) -> dict[str, Any]:
     config = getattr(sim, 'acamis_model_config', None)
+    message = operator_message.strip()
+    if not message:
+        raise ValueError("Operator message is required")
+    if len(message) > MAX_OPERATOR_MESSAGE_LENGTH:
+        raise ValueError("Operator message is too long")
     try:
-        result = await _ask(sim, operator_message, acamis_context)
+        result = await _ask(sim, message, acamis_context)
     except ValueError as exc:
         if config and getattr(sim, 'acamis_model_config', None) is config:
             config['connected'] = False
@@ -202,6 +251,8 @@ async def _ask(sim: Any, operator_message: str, acamis_context: dict[str, Any]) 
     message = operator_message.strip()
     if not message:
         raise ValueError("Operator message is required")
+    if len(message) > MAX_OPERATOR_MESSAGE_LENGTH:
+        raise ValueError("Operator message is too long")
     system = (
         "You are the advisory reasoning model inside ACAMIS for the SteelSim digital twin. "
         "Use only the supplied snapshot, incidents, specialist findings, and approved procedures. "

@@ -12,6 +12,8 @@ ACAMIS can send its current simulated plant snapshot, incident evidence, special
 
 For Gemini, the gateway queries the key's current model catalog and can select a compatible text model automatically. It calls the standard `models/{model}:generateContent` endpoint. A key without access to a compatible model, generation permission, or available quota will not verify. The interface reports connection and review errors; a failed review marks the connection for retesting.
 
+Remote model endpoints must be public HTTPS services. The backend rejects private or loopback network addresses, redirects, oversized responses, and overly long operator messages. A local model server is allowed only when a developer explicitly sets `STEELSIM_ALLOW_LOCAL_MODEL_ENDPOINTS=1` on a local backend; do not enable this on the public demo. These protections do not make the public MVP a multi-user credential vault.
+
 ## Data and control boundaries
 
 - The supplied key is held in backend memory for the active simulation. ACAMIS history does not archive the key, prompts, or model replies. Disconnect, simulation deletion, and backend restart clear the connection.

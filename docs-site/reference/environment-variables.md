@@ -12,6 +12,7 @@ SteelSim is configured through environment variables on both the backend service
 | **`VITE_API_PROXY_TARGET`** | Frontend | `http://127.0.0.1:8000` | Backend upstream target URL used by the Vite development proxy. |
 | **`STEELSIM_BASE_URL`** | E2E Tests | `http://127.0.0.1:5173/` | Target frontend URL evaluated during Puppeteer browser test execution. |
 | **`STEELSIM_HISTORY_DB`** | Backend | `data/operations.sqlite3` | SQLite operations journal path. Use a persistent volume for durable hosted history. |
+| **`STEELSIM_ALLOW_LOCAL_MODEL_ENDPOINTS`** | Backend | `""` (Disabled) | Local development only: set to `1` to permit loopback HTTP model servers. Keep disabled on a public deployment. |
 
 ## BYOK model keys (Task 3 design rule)
 
