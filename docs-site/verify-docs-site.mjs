@@ -88,6 +88,13 @@ try {
   console.log('   H1: ' + h1);
   assert.ok(h1.includes('REST API'));
 
+  console.log('   Opening Task 4 signal-review guide...');
+  await page.goto(`${baseUrl}task-4-history/signal-review-cases`, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('h1', { timeout: 8000 });
+  h1 = await page.$eval('h1', el => el.textContent?.trim());
+  console.log('   H1: ' + h1);
+  assert.ok(h1.includes('Telemetry review cases'));
+
   // 6. Test Project pages
   console.log('6. Testing Project pages...');
   await page.goto(`${baseUrl}project/architecture`, { waitUntil: 'domcontentloaded' });
@@ -100,7 +107,7 @@ try {
   await page.waitForSelector('h1', { timeout: 8000 });
   h1 = await page.$eval('h1', el => el.textContent?.trim());
   console.log('   H1: ' + h1);
-  assert.ok(h1.includes('Task 1 and Task 2 integration'));
+  assert.ok(h1.includes('Task 1, Task 2, and Task 3 integration'));
 
   // 7. Test Right-Side Outline (On this page)
   console.log('7. Verifying On this page outline...');
@@ -118,22 +125,17 @@ try {
   // 9. Test Theme Switcher (Dark / Light toggle)
   console.log('9. Testing theme switcher...');
   const initialThemeIsDark = await page.evaluate(() => document.documentElement.classList.contains('dark'));
-  const toggled = await page.evaluate(() => {
-    const btn = document.querySelector('.VPSwitchAppearance button, .VPSwitchAppearance');
-    if (btn) {
-      btn.click();
-      return true;
-    }
-    return false;
-  });
-  if (toggled) {
-    await new Promise(r => setTimeout(r, 400));
+  const appearanceSwitch = await page.$('.VPSwitchAppearance button, .VPSwitchAppearance');
+  const switchVisible = appearanceSwitch && await appearanceSwitch.evaluate(element => element.getClientRects().length > 0);
+  if (switchVisible) {
+    await appearanceSwitch.click();
+    await page.waitForFunction(previous => document.documentElement.classList.contains('dark') !== previous, { timeout: 3000 }, initialThemeIsDark);
     const toggledThemeIsDark = await page.evaluate(() => document.documentElement.classList.contains('dark'));
     console.log('   Appearance toggled: ' + toggledThemeIsDark);
     assert.notEqual(initialThemeIsDark, toggledThemeIsDark);
-    await page.evaluate(() => {
-      document.querySelector('.VPSwitchAppearance button, .VPSwitchAppearance')?.click();
-    });
+    await appearanceSwitch.click();
+  } else {
+    console.log('   Theme switcher is hidden at this viewport; skipping click.');
   }
 
   // 10. Test Mobile Viewport

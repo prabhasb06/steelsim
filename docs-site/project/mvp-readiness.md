@@ -23,8 +23,7 @@ The local implementation covers Tasks 1 through 4. The hosted deployment and sto
 [x] BYOK Advisory Model Gateway supporting Google Gemini (:generateContent) and OpenAI.
 [x] SQLite run history, frame replay, report download, and paused restoration (Task 4).
 [x] Thermal, cooling, and power findings requiring operator review (Task 4).
-[x] 85 backend tests passed after the model-gateway upgrade; four frontend unit tests and a browser smoke test passed.
-[x] Frontend type check, lint, and production build passed. The build reports a non-blocking large-bundle warning.
+[ ] Re-run backend, frontend, and browser checks against the current commit before a live demonstration; historical test counts are not a current verification result.
 [ ] Verify the specific public application URL and its latest deployment before a live demonstration.
 [ ] Configure persistent hosted storage if run history must survive redeployment.
 ```

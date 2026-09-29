@@ -1,6 +1,6 @@
 # 3. MVP scope
 
-SteelSim is developed as a focused, investor-ready engineering demonstration. To preserve technical credibility, the scope of the current release (Task 1 Plant Builder, Task 2 Simulation Control Center, and Task 3/3.1 ACAMIS Intelligence) is strictly demarcated from future industrial deployment items.
+SteelSim is a focused engineering demonstration. The current release includes the Plant Builder, Simulation Control Center, ACAMIS Intelligence, and local Operations History. These capabilities are separate from a future industrial deployment.
 
 ## Completed MVP capabilities
 
@@ -16,8 +16,8 @@ SteelSim is developed as a focused, investor-ready engineering demonstration. To
 
 ### Task 2 — Deterministic Simulation Engine & Control Center
 - Backend-authoritative Python/FastAPI execution loop with discrete clock ticks.
-- Monotonic state versioning ensuring linear, tamper-resistant state progression.
-- Reproducible seeded random variation for realistic but deterministic telemetry fluctuations.
+- Monotonic state versioning used by the client to reject older snapshots; this is not tamper-evident storage.
+- Deterministic telemetry variation based on simulation ticks and configured equipment.
 - Five speed multipliers: 1×, 5×, 10×, 60×, and CPU-safe MAX mode.
 - Topological mass-flow propagation: downstream throughput bounded by upstream output and rated node limits.
 - Dynamic equipment interlocks triggered by utility starvation or upstream flow cessation.
@@ -31,8 +31,12 @@ SteelSim is developed as a focused, investor-ready engineering demonstration. To
 - Three operating modes: **Observe** (passive review), **Advisory** (human-in-the-loop application), and **Autonomous Simulation** (policy-gated simulated remediation).
 - Five repeatable manual incident scenarios with containment and recovery procedures.
 - **Task 3.1 Rolling Throughput Detector:** Continuous numerical monitoring flagging deviations exceeding 25% with a strict 3-tick persistence requirement.
-- Policy-gated autonomous recovery (12-tick duration) and mandatory human verification modal for high-risk procedures.
+- Policy-gated simulated recovery scheduled after 12 running ticks for registered low-risk incidents; high-risk final procedures require human verification in Autonomous Simulation mode.
 - Bring Your Own Key (BYOK) advisory model gateway for Google Gemini and OpenAI-compatible providers with in-memory transient key handling.
+
+### Task 4 — Operations History and signal review
+- SQLite recording of run checkpoints, telemetry frames, incidents, and policy audit, with replay, JSON report, and explicit restore into a new paused session.
+- Deterministic temperature, cooling-flow, and power rules open operator-review cases after three running ticks. Operators can locate affected assets and acknowledge a case; acknowledgement is not a repair.
 
 ## Explicit non-scope boundaries
 
@@ -41,7 +45,7 @@ SteelSim is developed as a focused, investor-ready engineering demonstration. To
 - **No industrial safety certification:** Not certified under IEC 61508, IEC 61511, or ISO 13849.
 - **No finite-element or thermodynamic solver:** Uses discrete physics-based approximations, not computational fluid dynamics (CFD) or metallurgical phase-equilibrium engines.
 - **No physical control from advisory models:** External LLM reasoning is strictly advisory and cannot bypass deterministic policy gates.
-- **No permanent multi-tenant persistence:** Telemetry, simulation instances, and detector evidence reside purely in server memory and browser storage.
+- **No durable hosted multi-tenant persistence:** Active sessions and model keys are in process memory. Local SQLite records run history, but the current free hosted service has no persistent disk configured.
 :::
 
 ## Completed MVP vs. future functionality
@@ -55,5 +59,5 @@ SteelSim is developed as a focused, investor-ready engineering demonstration. To
 | **Plant Optimization** | Informational roadmap placeholder view | Multi-agent RL optimization, peak electrical tariff shaving |
 | **Maintenance** | Interlocked status visualization on cards | Remaining Useful Life (RUL) vibration and acoustic modeling |
 | **Energy Modeling** | Aggregate kW/MW real-time demand calculation | Dynamic power factor correction, harmonic distortion modeling |
-| **Data Storage** | Ephemeral server memory + browser LocalStorage | Distributed time-series database with historical replay |
+| **Data Storage** | Browser-local plant designs and local SQLite run replay; hosted storage is not durable | Managed persistence, backups, retention, and multi-user access |
 | **Access Control** | Optional shared API-key gate with constant-time check | Enterprise OAuth2/OIDC, team workspaces, RBAC |

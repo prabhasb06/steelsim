@@ -38,6 +38,7 @@ Task 3 introduces dedicated ACAMIS endpoints nested under each active simulation
 | `POST` | `/api/simulations/{id}/acamis/scenarios/{scenario}` | Triggers controlled scenario (`cooling_water_degradation`, etc.) | `ScenarioTriggerResponse` |
 | `POST` | `/api/simulations/{id}/acamis/scenarios/reset` | Clears active scenario and resets synthetic detector state | `ResetScenarioResponse` |
 | `POST` | `/api/simulations/{id}/acamis/monitoring/demo` | Injects synthetic telemetry throughput drift for Task 3.1 demo | `AnomalyDemoResponse` |
+| `POST` | `/api/simulations/{id}/acamis/signals/{case_id}/acknowledge` | Acknowledges an open telemetry review case without executing a repair | Updated ACAMIS status |
 | `POST` | `/api/simulations/{id}/acamis/autonomy` | Updates operating mode (`OBSERVE`, `ADVISORY`, `AUTONOMOUS_SIMULATION`) | `AutonomyModeResponse` |
 | `POST` | `/api/simulations/{id}/acamis/procedures/{id}` | Approves and executes recommended operational procedure | `ProcedureExecutionResponse` |
 | `POST` | `/api/simulations/{id}/acamis/model/connect` | Connects external BYOK Gemini model key in transient memory | `ModelConnectResponse` |
@@ -56,4 +57,3 @@ The unified command endpoint simplifies client integration by handling all lifec
   }
 }
 ```
-

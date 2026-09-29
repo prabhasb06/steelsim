@@ -18,9 +18,11 @@ Open **ACAMIS Intelligence** and select **Rolling mill** in Scenario Control. Th
 
 With the simulation still running, select **Furnace stability**. ACAMIS can apply simulated containment, then requires human verification for the final high-risk procedure. Show the intervention prompt and explain what an operator must approve. Apply the human intervention only if you want to complete that demo path.
 
-## 4. Show automatic detection
+## 4. Show automatic detection and review
 
-Clear the scenario. In **Automatic Monitoring**, start **Demonstrate telemetry drift**. The demo changes simulated mill capacity; the backend detector watches the resulting throughput. After three running ticks below its threshold, it raises an incident labeled **Telemetry detector**. This is a defined rolling-throughput rule. Additional temperature, cooling, and power findings are shown as evidence for operator review; they do not trigger arbitrary automatic repairs.
+Clear the scenario. In **Automatic Monitoring**, start **Demonstrate telemetry drift**. The demo changes simulated mill capacity; the backend detector watches the resulting throughput. After three running ticks below its threshold, it raises an incident labeled **Telemetry detector**. This is a defined rolling-throughput rule.
+
+For the separate signal-review workflow, inject **Furnace stability** while the simulation is running. Persistent thermal and electrical deviations can appear under **Multivariate telemetry monitoring** after three ticks. Show the affected asset links and **Acknowledge for review**, then point to the audit entry. Be explicit: acknowledgement records operator review; it does not correct the simulated furnace. Clear the scenario to reset this demo. See [Telemetry review cases](/task-4-history/signal-review-cases).
 
 ## 5. Show the recorded run
 

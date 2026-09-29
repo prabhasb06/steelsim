@@ -1,6 +1,6 @@
 # 31. Incident Response & Recovery Workflow
 
-When an anomaly is flagged—either automatically by the telemetry detector or manually through Scenario Control—ACAMIS executes a structured response lifecycle that prioritizes asset safety before restoring production pace.
+When the rolling-throughput detector raises a primary incident, or an operator injects a manual scenario, ACAMIS uses the registered response workflow. Other persistent temperature, cooling, and electrical deviations create [operator-review cases](/task-4-history/signal-review-cases), not new automatic repairs.
 
 ---
 
@@ -62,7 +62,7 @@ For low-risk incidents in Autonomous Simulation mode:
    ```python
    recovered = actual >= expected * detector.LIMIT
    ```
-   If verified, the incident is closed, plant health returns to `NORMAL`, and an immutable `INCIDENT_RECOVERED` event is logged.
+   For the rolling-throughput detector, the engine checks the affected mill's measured throughput before closure. If verified, the incident closes and `INCIDENT_RECOVERED` is recorded in the bounded live audit and local SQLite history. Manual scenarios use their configured simulated procedure; this is not a universal physical recovery verification.
 
 ---
 
@@ -77,4 +77,4 @@ When high-risk scenarios occur in Autonomous Simulation mode:
   * Outlines the contained state of the plant.
   * Specifies the high-risk action required (e.g., `stabilize_furnace`, `activate_standby_cooling`).
   * Requires the operator to click **Apply human intervention**, which dispatches the request with flag `human_verified: true`.
-* The audit trail permanently captures `HUMAN_VERIFICATION_CONFIRMED`.\n
+* The audit records `HUMAN_VERIFICATION_CONFIRMED`. Hosted history is not durable without a persistent disk, and the audit is not tamper-evident.

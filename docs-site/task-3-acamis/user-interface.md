@@ -1,6 +1,6 @@
 # 33. ACAMIS Intelligence User Interface
 
-The ACAMIS Console (`frontend/src/components/AcamisConsole.tsx`) provides an integrated, single-pane-of-glass operations center designed for plant managers, metallurgical engineers, and shift operators.
+The ACAMIS Console (`frontend/src/components/AcamisConsole.tsx`) presents monitoring, controlled scenarios, policy decisions, and review evidence from the SteelSim backend. It is a simulation interface, not a physical plant-control system.
 
 ---
 
@@ -25,9 +25,9 @@ flowchart TD
     end
 
     subgraph BottomGrid ["4. Governance & Audit Grid"]
-        SpecialistDeck["Specialist Intelligence<br/>• 6 Domain Rule Evaluators<br/>• Severity & Root Cause"]
+        SpecialistDeck["Specialist Intelligence<br/>• 6 Deterministic Domain Assessments"]
         RecoveryPlan["Central Recovery Plan<br/>• Containment Actions<br/>• Scheduled Procedures<br/>• Human Risk Authorization Modal"]
-        AuditLog["Operations Audit Timeline<br/>• Monotonic Ticks & Timestamps<br/>• Origin Classification"]
+        AuditLog["Operations Audit Timeline<br/>• Recorded Events & Details"]
     end
 
     Header --> TopGrid --> MiddleGrid --> BottomGrid
@@ -48,40 +48,38 @@ Displays real-time operational status at a glance:
 ### 2. Incident Impact Deck
 When an incident is active, displays the quantitative physical impact:
 * Baseline throughput vs. actual degraded throughput.
-* Aggregate plant power demand change (MW) and cooling water deficit ($	ext{m}^3/	ext{h}$).
+* Aggregate plant power demand and cooling-water readings where available in the current snapshot.
 * **Cross-Navigation Buttons:**
-  * **Locate in plant:** Automatically jumps to the visual Plant Builder canvas and centers the camera on the affected equipment node.
-  * **Inspect simulation:** Navigates directly to the Simulation Control Center process flow diagram.
+  * **Locate in plant:** Opens the Plant Builder with the affected equipment selected.
+  * **Inspect simulation:** Opens the Simulation Control Center with the affected equipment selected.
 
 ### 3. Automatic Monitoring Card
 Visualizes the real-time status of the Task 3.1 throughput anomaly detector:
-* Rolling mill telemetry readings ($A_T$ vs. $E_T$).
-* Persistence counter progress bar (`0/3`, `1/3`, `2/3`, `3/3`).
-* **Demo Button:** "Inject throughput anomaly (demo)" sends a synthetic 50% capacity restriction to demonstrate detection and recovery without human scenario selection.
+* Rolling-mill actual and expected throughput, detector state, and persistence count.
+* **Demo Button:** Injects a bounded simulated throughput restriction so the backend detector can observe a persistent deviation. This is a controlled demo input, not an unknown real-world fault.
 
 ### 4. Specialist Intelligence (6 Domains)
 Displays findings from the 6 diagnostic rule evaluators:
-* Mechanical, Electrical, Thermal, Utility, Casting, and Raw Material.
-* Each card reports domain health (`NORMAL`, `WARNING`, `CRITICAL`), primary diagnostic message, and identified root cause.
+* Safety, Maintenance, Quality, Production, Energy, and Logistics.
+* Each card reports a deterministic severity, summary, and confidence value. The summaries are rule-based assessments, not proven root-cause diagnoses.
 
 ### 5. Central Recovery Plan
 Presents actionable mitigation procedures:
-* Procedure name, description, and risk level (`LOW`, `MEDIUM`, `HIGH`).
+* Procedure name and current step status.
 * In Advisory mode: Clickable **Apply** buttons for operator-guided remediation.
-* In Autonomous mode: Live countdown display (*"Autonomous simulated recovery in N simulation ticks"*).
+* In Autonomous Simulation mode: Eligible low-risk rolling-mill recovery can be scheduled after the configured running-tick window; high-risk actions require human verification.
 
 ### 6. Human Intervention Alert Dialog
-When a `HIGH`-risk procedure is scheduled in Autonomous mode:
+When an incident recovery plan requires human verification:
 * ACAMIS triggers a high-priority modal dialog (`role="alertdialog"`).
 * Displays safety warnings, affected machinery, and required confirmation.
-* Traps keyboard focus (`Tab`, `Escape`) and provides an explicit **Apply human intervention** button.
+* Provides **Review plan** and an explicit **Apply human intervention** action when the selected mode permits it. Reviewing or dismissing the prompt does not apply a procedure. This is a simulated authorization gate, not certified industrial safety control.
 
 ### 7. Advisory Model Gateway Panel
-Enables operators to connect an external Google Gemini API key:
+Enables operators to connect an external Google Gemini or OpenAI-compatible provider:
 * Input field with key masking (`••••••••••••`).
-* Live connection status probe.
-* Interactive chat console allowing operators to ask questions regarding the live simulation state.
+* Connection verification through a provider request; provider charges may apply.
+* An advisory review channel with relevant simulation context. Model replies cannot directly issue SteelSim commands, and the deterministic core works without an API key.
 
 ### 8. Audit Timeline
-Chronological, append-only log of operational events:
-* Displays tick index, event type (`INCIDENT_DECLARED`, `CONTAINMENT_APPLIED`, `PROCEDURE_EXECUTED`, `INCIDENT_RECOVERED`), origin (`Manual scenario` vs `Telemetry detector`), and operator signature.\n
+Backend-recorded events and details for scenarios, mode changes, signal reviews, and simulated procedures. The UI does not display a cryptographic operator signature or claim that the audit is tamper-proof. See [Signal Review Cases](../task-4-history/signal-review-cases.md) for the separate telemetry-evidence workflow.

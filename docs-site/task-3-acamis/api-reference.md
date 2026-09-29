@@ -1,6 +1,6 @@
 # 34. ACAMIS REST API Reference
 
-All ACAMIS operations are exposed via authenticated REST endpoints registered under `/api/simulations/{sim_id}/acamis`.
+ACAMIS operations are exposed under `/api/simulations/{sim_id}/acamis`. The current demo has an **optional** shared API-key gate; these endpoints are not authenticated when that gate is not configured. See [Security](/reference/security) before exposing a deployment.
 
 ---
 
@@ -12,6 +12,7 @@ All ACAMIS operations are exposed via authenticated REST endpoints registered un
 | `POST` | `/api/simulations/{sim_id}/acamis/scenarios/{scenario}` | Inject a controlled manual incident scenario |
 | `POST` | `/api/simulations/{sim_id}/acamis/scenarios/reset` | Clear active scenario and restore simulation baseline |
 | `POST` | `/api/simulations/{sim_id}/acamis/monitoring/demo` | Apply synthetic 50% rolling capacity restriction |
+| `POST` | `/api/simulations/{sim_id}/acamis/signals/{case_id}/acknowledge` | Record operator acknowledgement of an open telemetry review case; no repair is executed |
 | `POST` | `/api/simulations/{sim_id}/acamis/autonomy` | Change autonomy level (`OBSERVE`, `ADVISORY`, `AUTONOMOUS_SIMULATION`) |
 | `POST` | `/api/simulations/{sim_id}/acamis/procedures/{procedure}` | Execute or confirm an approved simulated procedure |
 | `POST` | `/api/simulations/{sim_id}/acamis/model/connect` | Verify and connect an external LLM advisory key |
@@ -68,6 +69,11 @@ GET /api/simulations/{sim_id}/acamis/status
       }
     ]
   },
+  "signal_monitoring": {
+    "version": "signals.v2",
+    "findings": [],
+    "cases": []
+  },
   "recovery_plan": {
     "status": "RECOVERING",
     "recommended_procedures": ["pace_upstream_material", "inspect_rolling_mill"],
@@ -78,6 +84,8 @@ GET /api/simulations/{sim_id}/acamis/status
   }
 }
 ```
+
+When persistent temperature, cooling, or electrical deviations are present without a primary incident, `plant_health` is `DEGRADED` and `recovery_plan.status` is `SIGNAL_REVIEW_REQUIRED`. The status response includes measured `signal_monitoring.findings` and `signal_monitoring.cases`; it does not assign an automatic repair to those cases. See [Telemetry review cases](/task-4-history/signal-review-cases).
 
 ---
 
@@ -104,6 +112,16 @@ POST /api/simulations/{sim_id}/acamis/autonomy
 }
 ```
 * **Valid Modes:** `OBSERVE`, `ADVISORY`, `AUTONOMOUS_SIMULATION`.
+
+### Acknowledge a signal review case
+
+```http
+POST /api/simulations/{sim_id}/acamis/signals/{case_id}/acknowledge
+```
+
+* **Result:** Returns updated ACAMIS status. An open case becomes `ACKNOWLEDGED` and one `SIGNAL_REVIEW_ACKNOWLEDGED` audit entry is added. Repeating acknowledgement of the same case is idempotent.
+* **Errors:** `404` for an unknown simulation; `409` for an unknown or already resolved case.
+* **Safety boundary:** This endpoint does not modify plant telemetry or execute a procedure. It requires no model API key.
 
 ---
 

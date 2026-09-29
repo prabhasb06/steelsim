@@ -96,7 +96,8 @@ export default defineConfig({
           text: 'Task 4 — Operations History',
           collapsed: false,
           items: [
-            { text: 'Task 4 overview', link: '/task-4-history/overview' }
+            { text: 'Task 4 overview', link: '/task-4-history/overview' },
+            { text: 'Telemetry review cases', link: '/task-4-history/signal-review-cases' }
           ]
         },
         {

@@ -1,6 +1,6 @@
 # Task 4: Operations History
 
-Task 4 adds a local operational journal and a read-only history screen to SteelSim. Each simulation session receives a run ID. The backend records checkpoints, sampled simulation frames, incidents, recovery status, signal findings, and policy audit entries in SQLite.
+Task 4 adds a local operational journal and a read-only history screen to SteelSim. Each simulation session receives a run ID. The backend records checkpoints, simulation frames, incidents, recovery status, signal findings, telemetry review cases, and policy audit entries in SQLite.
 
 The **Operations History** screen can replay recorded frames, plot plant power, compare summary values from two loaded runs, download a JSON incident report, and restore a saved run into a new paused simulation session.
 
@@ -27,7 +27,7 @@ ACAMIS compares measured simulated telemetry with the deterministic baseline for
 | Cooling | Water flow falls below 75% of baseline. |
 | Electrical demand | Power draw rises above 112% of baseline. |
 
-Concurrent flagged signals on one asset appear together as correlated evidence. They do not establish a root cause and do not schedule new automatic repairs. The existing rolling-throughput detector and its registered low-risk simulated recovery remain separate.
+Concurrent flagged signals on one asset appear together as correlated evidence. Persistent findings open deduplicated [telemetry review cases](/task-4-history/signal-review-cases). An operator can acknowledge a case, and it closes when the reading returns within the rule. Cases and acknowledgements are retained in the run checkpoint and JSON report. They do not establish a root cause or schedule an automatic repair. The existing rolling-throughput detector and its registered low-risk simulated recovery remain separate.
 
 ## Storage and deployment
 

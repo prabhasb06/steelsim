@@ -10,12 +10,14 @@ The system addresses the gap between static computer-aided design (CAD) schemati
 **“SteelSim creates the factory; ACAMIS understands the factory.”**
 :::
 
-SteelSim models, edits, validates, and serializes the physical factory graph, and executes the deterministic physical simulation. ACAMIS is an independent, separate cognitive layer designed for future multi-agent optimization, energy demand forecasting, and predictive maintenance. SteelSim does not control real-world factory hardware and must not be described as certified industrial control software.
+SteelSim models, edits, validates, and serializes the virtual factory graph, then runs a deterministic simulation. The integrated ACAMIS module reads that simulation's backend state, evaluates defined incidents and signal deviations, and applies only registered simulated procedures under its operating-mode rules. Future optimization, forecasting, and predictive maintenance are not implemented. SteelSim does not control real-world factory hardware and is not certified industrial control software.
 
-## Two completed milestones
+## Implemented modules
 
 1. **Task 1 — Visual Plant Builder:** A browser-based engineering workspace using React Flow that allows operators to drag, connect, configure, and validate complete steel plant topologies using typed industrial ports.
 2. **Task 2 — Deterministic Simulation Engine & Control Center:** A Python and FastAPI execution runtime that computes discrete, tick-driven physical approximations (mass throughput, electrical loads, cooling water demand, and cascade interlocks) and streams authoritative telemetry to a live Simulation Control Center.
+3. **Task 3/3.1 — ACAMIS Intelligence:** Deterministic scenario response, a rolling-throughput detector, six domain assessments, policy-gated simulated procedures, and optional advisory model reviews.
+4. **Task 4 — Operations History:** Local SQLite run recordings and replay, plus operator-review cases for persistent temperature, cooling, and power deviations.
 
 ## System overview diagram
 

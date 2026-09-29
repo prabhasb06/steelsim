@@ -24,7 +24,7 @@ graph TB
         TopologyEngine["Validation Engine<br/>• Structural Graph Checks<br/>• Aggregate Utility Checks"]
         SimManager["Simulation Manager<br/>• Bounded Memory Buffer<br/>• Oldest Inactive Eviction"]
         Engine["Deterministic Engine<br/>• Monotonic state_version<br/>• Tick Loop (1 Hz)<br/>• Mass & Energy Balance"]
-        AcamisCore["ACAMIS Intelligence Engine<br/>• 8-Stage Evaluation Pipeline<br/>• 6 Specialist Evaluators<br/>• Telemetry Anomaly Detector<br/>• Autonomous Mitigation & Gates"]
+        AcamisCore["ACAMIS Intelligence Engine<br/>• Defined Signal Rules<br/>• 6 Specialist Evaluators<br/>• Rolling Throughput Detector<br/>• Policy-Gated Simulated Procedures"]
         Gateway["Advisory Model Gateway<br/>• In-Memory Transient Keys<br/>• Sanitized Context Bundler"]
     end
 
@@ -55,6 +55,5 @@ graph TB
 
 - **Client (React 19):** Responsible for UI rendering, user interactions, graph manipulation, ACAMIS operations console, and telemetry presentation. Contains zero simulation physics logic.
 - **Backend (FastAPI):** Single source of truth for topology validation, simulation state, tick loops, telemetry generation, specialist evaluations, and autonomous procedure execution.
-- **Intelligence Layer (ACAMIS):** Consumes read-only snapshots at stage 1 of every tick, evaluates plant state across 6 engineering domains, detects throughput anomalies via statistical drift monitoring, and safely executes mitigation procedures subject to autonomy mode and human safety gates.
+- **Intelligence Layer (ACAMIS):** Reads backend snapshots, evaluates six defined operational domains, applies threshold-and-persistence rules to selected telemetry, and executes registered simulated procedures subject to mode and policy gates. The signal-review rules do not automatically diagnose or repair the plant.
 - **Authoritative boundary:** If client state drifts from the server, server state snapshots immediately overwrite client state. External LLM models operate strictly out-of-band as advisory consultants without direct actuation authority.
-

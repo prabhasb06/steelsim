@@ -1,6 +1,6 @@
 # 27. ACAMIS Architecture & Data Flow
 
-ACAMIS executes a deterministic pipeline that runs concurrently with the SteelSim simulation clock. Every second, the digital twin updates physical quantities, which ACAMIS ingests, evaluates, and acts upon according to configured operating policies.
+ACAMIS evaluates backend SteelSim state as simulation ticks advance. Each tick represents one simulated second; wall-clock frequency changes with the selected speed. Its detectors and responses are deterministic and operate only on simulated equipment.
 
 ---
 
@@ -17,7 +17,7 @@ flowchart TD
     Gate["5. Policy & Risk Gating<br/>(Check autonomy mode & human approval rules)"]
     Execute["6. Simulated Execution<br/>(Apply mitigation / adjust plant throughput)"]
     Verify["7. Recovery Verification<br/>(Re-evaluate telemetry against baseline)"]
-    Audit["8. Audit Trail Recording<br/>(Append immutable record with state version)"]
+    Audit["8. Audit Trail Recording<br/>(Bounded live audit and local SQLite history)"]
 
     Snapshot --> Detect
     Detect --> Assess
@@ -34,7 +34,7 @@ flowchart TD
 4. **Central Recovery Plan:** The central coordinator assembles recommended procedures into an ordered mitigation strategy based on severity and risk.
 5. **Policy & Risk Gating:** Operating mode (`OBSERVE`, `ADVISORY`, `AUTONOMOUS_SIMULATION`) dictates whether containment or recovery can proceed automatically, or if human confirmation is mandatory.
 6. **Simulated Execution:** Approved procedures modify internal digital-twin parameters (e.g., reducing heat load by 22%, pacing raw material to 80%, or clearing mill capacity constraints).
-7. **Recovery Verification:** The detector evaluates live telemetry to ensure the asset has returned to normal operating bounds before closing the incident.
+7. **Recovery Verification:** For the rolling-throughput detector incident, the engine checks affected mills against the expected throughput bound before closure. Manual scenarios use configured simulated procedures.
 8. **Audit Trail Recording:** Policy events appear in the live audit and are archived with the run in Task 4's local SQLite history.
 
 ---
@@ -86,6 +86,4 @@ flowchart LR
 
 ## Central Orchestrator & Policy Sovereignty
 
-The central orchestrator resolves conflicts between specialist recommendations:
-* **Strict Hierarchy:** Safety and physical equipment limits unconditionally override production pace.
-* **Deterministic Sovereignty:** If an external LLM advisory model is connected, its suggestions are advisory only. The central orchestrator will reject any action not registered in the pre-approved procedure catalog (`acamis-simulation-policy.v1`).\n
+The central plan exposes a priority order and procedures registered for the active primary incident. The six domain assessments are deterministic rule outputs; they do not perform independent model-based optimization or prove root cause. Signal-review cases carry measured evidence but no mapped automatic repair. If an external model is connected, its response remains advisory and cannot execute a procedure or bypass the policy gate.
