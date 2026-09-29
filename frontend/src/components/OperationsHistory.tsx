@@ -4,20 +4,24 @@ import type { SimulationSnapshot, SimulationState } from '../types';
 
 type Run = { id: string; name: string; created_at: string; status: string; tick: number };
 export type SignalFinding = { equipment_id: string; name: string; correlated: boolean; signals: { domain: string; metric: string; actual: number; expected: number; persistence: number }[] };
+export type SignalCase = { id: string; equipment_id: string; domain: string; status: 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED'; opened_tick: number; acknowledged_tick: number | null; resolved_tick: number | null };
 type Frame = { seq: number; snapshot: SimulationSnapshot; incident: null | { title: string }; origin: string | null; recovery_plan: { status: string }; signals: SignalFinding[] };
 type Detail = Run & { frame_count: number; audit: { id: string; at: string; event: string; detail: string }[] };
 const button = 'rounded border border-industrial-600 px-3 py-2 text-xs text-gray-200 hover:bg-industrial-700 disabled:opacity-40';
 
-export function SignalEvidence({ findings }: { findings: SignalFinding[] }) {
+export function SignalEvidence({ findings, cases = [], busy = false, onAcknowledge, onLocate }: { findings: SignalFinding[]; cases?: SignalCase[]; busy?: boolean; onAcknowledge?: (id: string) => void; onLocate?: (view: 'BUILDER' | 'SIMULATION', nodeId: string) => void }) {
+  const recentResolved = cases.filter(item => item.status === 'RESOLVED').slice(-5).reverse();
   return <section className="mt-5 rounded-lg border border-industrial-700 bg-industrial-800/60 p-4">
     <h2 className="text-sm font-bold text-white">Multivariate telemetry monitoring</h2>
-    <p className="mt-1 text-xs leading-5 text-gray-400">Temperature, cooling flow and electrical demand · three consecutive running ticks · simulator baseline</p>
+    <p className="mt-1 text-xs leading-5 text-gray-400">Temperature, cooling flow and electrical demand · three consecutive running ticks · simulator baseline. Review acknowledgement records an operator decision; it does not repair the plant.</p>
     {!findings.length && <p className="mt-3 text-xs text-gray-500">No persistent signal deviations recorded. Monitoring progresses while the simulation runs.</p>}
     {findings.map(f => <div key={f.equipment_id} className="mt-3 rounded border border-amber-800/60 p-3">
       <h3 className="text-xs font-bold text-amber-300">{f.name} · {f.correlated ? 'Correlated signals' : 'Signal deviation'} · review required</h3>
-      {f.signals.map(s => <p key={s.domain} className="mt-1 font-mono text-xs text-gray-300">{s.metric}: {s.actual} / baseline {s.expected} · {s.persistence} ticks</p>)}
+      {f.signals.map(s => { const signalCase = cases.find(item => item.equipment_id === f.equipment_id && item.domain === s.domain && item.status !== 'RESOLVED'); return <div key={s.domain} className="mt-2 flex flex-wrap items-center justify-between gap-2"><p className="font-mono text-xs text-gray-300">{s.metric}: {s.actual} / baseline {s.expected} · {s.persistence} ticks</p>{signalCase && <div className="flex items-center gap-2"><span className="font-mono text-[10px] text-amber-300">{signalCase.status}</span>{signalCase.status === 'OPEN' && onAcknowledge && <button type="button" disabled={busy} onClick={() => onAcknowledge(signalCase.id)} className={`${button} disabled:opacity-40`}>Acknowledge for review</button>}</div>}</div>; })}
+      {onLocate && <div className="mt-3 flex gap-3"><button type="button" onClick={() => onLocate('BUILDER', f.equipment_id)} className="text-xs text-cyan-300 hover:underline">Locate in plant</button><button type="button" onClick={() => onLocate('SIMULATION', f.equipment_id)} className="text-xs text-cyan-300 hover:underline">Inspect in simulation</button></div>}
       <p className="mt-2 text-xs text-gray-400">Evidence identifies an operating deviation; it does not establish a physical root cause.</p>
     </div>)}
+    {recentResolved.length > 0 && <div className="mt-4 border-t border-industrial-700 pt-3"><p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Recently resolved signals</p>{recentResolved.map(item => <p key={item.id} className="mt-1 font-mono text-xs text-gray-400">{item.equipment_id} · {item.domain} · tick {item.resolved_tick}</p>)}</div>}
   </section>;
 }
 

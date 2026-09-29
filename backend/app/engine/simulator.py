@@ -381,7 +381,7 @@ class SteelSimEngine:
             tick=self.tick,
             state_version=self.state_version,
             seed=self.seed,
-            system_health="INCIDENT" if self.acamis_scenario else ("DEGRADED" if self.plant_summary["interlocked_nodes"] else "NORMAL"),
+            system_health="INCIDENT" if self.acamis_scenario else ("DEGRADED" if self.plant_summary["interlocked_nodes"] or self.signal_monitor["findings"] else "NORMAL"),
             acamis_impact=self.acamis_impact or (self.acamis_last_resolution or {}).get("impact"),
             expected_throughput_tph={key: value["throughput_tph"] for key, value in self.expected_telemetry.items()},
             node_telemetry=self.node_telemetry,

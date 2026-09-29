@@ -99,6 +99,9 @@ class HistoryStore:
         sim = manager.create_simulation(SimulationConfiguration.model_validate(record["config"]))
         for key in FIELDS:
             setattr(sim, key, saved[key])
+        # Older signals.v1 checkpoints predate the operator-review case ledger.
+        sim.signal_monitor.setdefault("cases", [])
+        sim.signal_monitor["version"] = "signals.v2"
         sim.acamis_mitigations = set(saved["acamis_mitigations"])
         state = saved["state"]
         sim.initial_time = datetime.fromisoformat(state["initial_time"])

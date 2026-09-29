@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from app.acamis import model_gateway, service
+from app.acamis import model_gateway, multivariate, service
 from app.api.routes import manager
 
 router = APIRouter(prefix="/api/simulations/{sim_id}/acamis", tags=["acamis"])
@@ -52,6 +52,15 @@ async def _automatic_model_review(sim, trigger: str) -> None:
 @router.get("/status")
 async def get_acamis_status(sim_id: str):
     return service.status(_simulation(sim_id))
+
+@router.post("/signals/{case_id}/acknowledge")
+async def acknowledge_signal(sim_id: str, case_id: str):
+    sim = _simulation(sim_id)
+    try:
+        multivariate.acknowledge(sim, case_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return service.status(sim)
 
 @router.post("/scenarios/reset")
 async def reset_scenario(sim_id: str):

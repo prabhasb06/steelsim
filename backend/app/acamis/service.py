@@ -53,6 +53,27 @@ def status(sim: Any) -> dict[str, Any]:
     affected = _affected_equipment(sim)
     severity = definition["severity"] if definition else "INFO"
     findings = [_finding(domain, scenario, severity, affected) for domain in DOMAINS]
+    signal_findings = sim.signal_monitor["findings"]
+    if not scenario and signal_findings:
+        relevant_signals = {
+            "Safety": {"thermal", "cooling"},
+            "Maintenance": {"thermal", "cooling", "electrical"},
+            "Quality": {"thermal"},
+            "Production": set(),
+            "Energy": {"cooling", "electrical"},
+            "Logistics": set(),
+        }
+        for finding in findings:
+            matches = [(item, signal) for item in signal_findings for signal in item["signals"]
+                       if signal["domain"] in relevant_signals[finding["domain"]]]
+            finding["summary"] = ("Persistent simulated telemetry deviation requires operator review; "
+                                  "no automatic repair is registered." if matches else
+                                  "No domain-specific deviation confirmed; active signal cases remain under operator review.")
+            finding["evidence"] = [f"{item['equipment_id']}: {signal['metric']} {signal['actual']} versus baseline {signal['expected']} for {signal['persistence']} ticks."
+                                   for item, signal in matches] or ["See the active telemetry review cases for measured evidence."]
+            finding["affected_equipment"] = list(dict.fromkeys(item["equipment_id"] for item, _ in matches))
+            finding["severity"] = "HIGH" if matches else "INFO"
+            finding["escalation_required"] = bool(matches)
     if scenario == detector.INCIDENT:
         for finding in findings:
             finding["evidence"] = [f"Measured {item['actual_tph']} t/h versus expected {item['expected_tph']} t/h; {item['deviation_percent']}% deviation persisted {item['persistence_count']} ticks." for item in sim.rolling_monitor["evidence"]]
@@ -69,7 +90,7 @@ def status(sim: Any) -> dict[str, Any]:
                 procedure_statuses[procedure] = "AVAILABLE"
     return {
         "contract_version": "acamis.v1", "source": "SteelSim Digital Twin", "connection": "LIVE" if sim.status.value == "RUNNING" else "STANDBY", "simulation_id": sim.id, "state_version": sim.state_version,
-        "operating_mode": getattr(sim, "acamis_autonomy", "OBSERVE"), "plant_health": "STABILIZED" if contained else ("INCIDENT" if scenario else ("DEGRADED" if sim.plant_summary["interlocked_nodes"] or sim.signal_monitor["findings"] else "NORMAL")),
+        "operating_mode": getattr(sim, "acamis_autonomy", "OBSERVE"), "plant_health": "STABILIZED" if contained else ("INCIDENT" if scenario else ("DEGRADED" if sim.plant_summary["interlocked_nodes"] or signal_findings else "NORMAL")),
         "incident": None if not definition else {"id": scenario, "title": definition["title"], "severity": severity, "summary": definition["summary"], "affected_equipment": affected, "verified": True, "contained": contained},
         "specialist_findings": findings,
         "automatic_monitoring": detector.public_status(sim),
@@ -77,7 +98,7 @@ def status(sim: Any) -> dict[str, Any]:
         "history_error": sim.history_error,
         "incident_origin": "Telemetry detector" if scenario == detector.INCIDENT else "Manual scenario" if scenario else None,
         "incident_evidence": sim.rolling_monitor["evidence"] if scenario == detector.INCIDENT else [],
-        "recovery_plan": {"status": "HUMAN_VERIFICATION_REQUIRED" if escalation else ("RECOVERING" if sim.acamis_recovery_tick is not None else "READY" if scenario else "RECOVERED" if getattr(sim, "acamis_last_resolution", None) else "MONITORING"), "priority_order": ["Safety", "Equipment limits", "Quality", "Maintenance", "Production", "Energy", "Logistics"], "recommended_procedures": definition["procedures"] if definition else [], "procedure_statuses": procedure_statuses, "rationale": "In autonomous mode, safe containment is automatic. Final high-risk repairs require an operator; low-risk simulated recovery advances with the simulation clock."},
+        "recovery_plan": {"status": ("HUMAN_VERIFICATION_REQUIRED" if escalation else "RECOVERING" if sim.acamis_recovery_tick is not None else "READY") if scenario else "SIGNAL_REVIEW_REQUIRED" if signal_findings else "RECOVERED" if getattr(sim, "acamis_last_resolution", None) else "MONITORING", "priority_order": ["Safety", "Equipment limits", "Quality", "Maintenance", "Production", "Energy", "Logistics"], "recommended_procedures": definition["procedures"] if definition else [], "procedure_statuses": procedure_statuses, "rationale": "Persistent signal deviations are evidence for operator review, not a diagnosis or an approved automatic repair." if not scenario and signal_findings else "In autonomous mode, safe containment is automatic. Final high-risk repairs require an operator; low-risk simulated recovery advances with the simulation clock."},
         "model_gateway": model_gateway.public_status(sim),
         "model_advisory": getattr(sim, "acamis_last_model_advisory", None),
         "context_manifest": {"ruleset": "acamis-simulation-policy.v1", "snapshot_contract": "acamis.v1", "domains": list(DOMAINS), "approved_procedures_only": True},

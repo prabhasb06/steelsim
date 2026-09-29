@@ -35,6 +35,7 @@ def report(run_id: str):
     checkpoint = result.pop("checkpoint")
     result["latest_state"] = checkpoint["state"]
     result["latest_signal_findings"] = checkpoint["signal_monitor"]["findings"]
+    result["signal_review_cases"] = checkpoint["signal_monitor"].get("cases", [])
     result["last_resolution"] = checkpoint["acamis_last_resolution"]
     result["scope"] = "SteelSim simulated operational evidence; no physical plant control."
     result["contract_version"] = "operations-report.v1"

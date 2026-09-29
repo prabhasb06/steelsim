@@ -25,7 +25,14 @@ body {
 }
 
 .react-flow__attribution {
-  display: none !important;
+  background: rgba(23, 26, 29, 0.86) !important;
+  color: #9ca3af !important;
+  font-size: 10px;
+  border-top-left-radius: 4px;
+}
+
+.react-flow__attribution a {
+  color: #9ca3af;
 }
 
 .engineering-discovery {

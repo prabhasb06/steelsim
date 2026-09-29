@@ -51,13 +51,95 @@ def test_normal_transient_persistent_and_correlated(setup_run):
     assert finding['correlated']
     assert {s['domain'] for s in finding['signals']} == {'thermal', 'electrical'}
     assert all(s['persistence'] == 3 for s in finding['signals'])
-    assert service.status(sim)['plant_health'] == 'DEGRADED'
+    assessment = service.status(sim)
+    assert assessment['plant_health'] == 'DEGRADED'
+    assert assessment['snapshot']['system_health'] == 'DEGRADED'
+    assert assessment['recovery_plan']['status'] == 'SIGNAL_REVIEW_REQUIRED'
+    assert next(item for item in assessment['specialist_findings'] if item['domain'] == 'Safety')['affected_equipment'] == [asset]
+    assert next(item for item in assessment['specialist_findings'] if item['domain'] == 'Energy')['severity'] == 'HIGH'
     assert sim.acamis_scenario is None
     assert sim.acamis_recovery_tick is None
     assert not sim.acamis_model_config
     for _ in range(4):
         measure(sim)
     assert len([a for a in sim.acamis_audit if a['event'] == 'SIGNAL_INCIDENT_CHANGED']) == 1
+
+
+def test_signal_review_case_lifecycle_and_api(setup_run, monkeypatch):
+    store, manager, sim = setup_run
+    from app.api import acamis, history
+    monkeypatch.setattr(acamis, 'manager', manager)
+    monkeypatch.setattr(history, 'manager', manager)
+    client = TestClient(app)
+    measure(sim, ('cooling',))
+    measure(sim, ('cooling',))
+    assert sim.signal_monitor['cases'] == []
+    asset = measure(sim, ('cooling',))
+    cases = sim.signal_monitor['cases']
+    assert len(cases) == 1
+    case = cases[0]
+    assert case['equipment_id'] == asset
+    assert case['domain'] == 'cooling'
+    assert case['status'] == 'OPEN'
+    assert case['first_tick'] == 1
+    assert case['persistence'] == 3
+    measure(sim, ('cooling',))
+    assert len(cases) == 1
+
+    route = f'/api/simulations/{sim.id}/acamis/signals/{case["id"]}/acknowledge'
+    response = client.post(route)
+    assert response.status_code == 200
+    assert response.json()['signal_monitoring']['cases'][0]['status'] == 'ACKNOWLEDGED'
+    assert sim.acamis_scenario is None
+    assert sim.acamis_recovery_tick is None
+    assert len([entry for entry in sim.acamis_audit if entry['event'] == 'SIGNAL_REVIEW_ACKNOWLEDGED']) == 1
+    assert client.post(route).status_code == 200
+    assert len([entry for entry in sim.acamis_audit if entry['event'] == 'SIGNAL_REVIEW_ACKNOWLEDGED']) == 1
+    assert client.post(f'/api/simulations/{sim.id}/acamis/signals/missing/acknowledge').status_code == 409
+
+    measure(sim, ())
+    assert case['status'] == 'RESOLVED'
+    assert case['resolved_tick'] == sim.tick
+    assert service.status(sim)['recovery_plan']['status'] == 'MONITORING'
+    assert client.post(route).status_code == 409
+    for _ in range(3):
+        measure(sim, ('cooling',))
+    assert len(cases) == 2
+    assert cases[-1]['status'] == 'OPEN'
+    sim.persist_history()
+    report = client.get(f'/api/history/runs/{sim.history_run_id}/report').json()
+    assert len(report['signal_review_cases']) == 2
+    assert store.detail(sim.history_run_id)['checkpoint']['signal_monitor']['cases'] == cases
+
+
+def test_restore_migrates_legacy_signal_monitor(setup_run):
+    store, manager, sim = setup_run
+    source = sim.history_run_id
+    with store.connect() as db:
+        row = db.execute('SELECT checkpoint FROM runs WHERE id=?', (source,)).fetchone()
+        checkpoint = json.loads(row['checkpoint'])
+        checkpoint['signal_monitor'].pop('cases')
+        checkpoint['signal_monitor']['version'] = 'signals.v1'
+        db.execute('UPDATE runs SET checkpoint=? WHERE id=?', (json.dumps(checkpoint), source))
+    restored = store.restore(source, manager)
+    assert restored.signal_monitor['version'] == 'signals.v2'
+    assert restored.signal_monitor['cases'] == []
+
+
+def test_case_retention_never_discards_an_active_deviation(setup_run):
+    _, _, sim = setup_run
+    for _ in range(3):
+        measure(sim, ('cooling',))
+    active = sim.signal_monitor['cases'][0]
+    sim.signal_monitor['cases'] = [active] + [
+        {**active, 'id': f'old-{index}', 'status': 'RESOLVED', 'resolved_tick': index}
+        for index in range(105)
+    ]
+    measure(sim, ('cooling',))
+    retained = sim.signal_monitor['cases']
+    assert len(retained) == multivariate.MAX_CASES
+    assert len([case for case in retained if case['status'] != 'RESOLVED']) == 1
+    assert retained[-1]['id'] == active['id']
 
 
 def test_pause_clear_reset_and_signal_change(setup_run):

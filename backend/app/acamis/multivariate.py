@@ -6,6 +6,7 @@ RULES = (
     ("cooling", "water_m3h", 0.75, "low"),
     ("electrical", "power_kw", 1.12, "high"),
 )
+MAX_CASES = 100
 
 
 def evaluate(sim):
@@ -45,6 +46,31 @@ def evaluate(sim):
                              "response": "Operator review required. No automatic repair is registered for this signal finding."})
     old = {(f["equipment_id"], s["domain"]) for f in state["findings"] for s in f["signals"]}
     new = {(f["equipment_id"], s["domain"]) for f in findings for s in f["signals"]}
+    cases = state.setdefault("cases", [])
+    active = {(case["equipment_id"], case["domain"]): case for case in cases
+              if case["status"] in {"OPEN", "ACKNOWLEDGED"}}
+    for finding in findings:
+        for signal in finding["signals"]:
+            key = (finding["equipment_id"], signal["domain"])
+            case = active.get(key)
+            if case is None:
+                case = {"id": f"signal-{sim.tick}-{key[0]}-{key[1]}", "equipment_id": key[0],
+                        "name": finding["name"], "domain": key[1], "status": "OPEN",
+                        "opened_tick": sim.tick, "acknowledged_tick": None, "resolved_tick": None}
+                cases.append(case)
+                active[key] = case
+            case.update(metric=signal["metric"], actual=signal["actual"],
+                        expected=signal["expected"], first_tick=signal["first_tick"],
+                        persistence=signal["persistence"])
+    for key, case in active.items():
+        if key not in new:
+            case["status"] = "RESOLVED"
+            case["resolved_tick"] = sim.tick
+    if len(cases) > MAX_CASES:
+        open_cases = [case for case in cases if case["status"] != "RESOLVED"]
+        resolved_cases = [case for case in cases if case["status"] == "RESOLVED"]
+        resolved_slots = max(0, MAX_CASES - len(open_cases))
+        state["cases"] = (resolved_cases[-resolved_slots:] if resolved_slots else []) + open_cases
     state["findings"] = findings
     if new != old:
         from app.acamis.service import _audit
@@ -52,4 +78,21 @@ def evaluate(sim):
 
 
 def initial_state():
-    return {"version": "signals.v1", "last_tick": -1, "samples": {}, "findings": []}
+    return {"version": "signals.v2", "last_tick": -1, "samples": {}, "findings": [], "cases": []}
+
+
+def acknowledge(sim, case_id):
+    case = next((item for item in sim.signal_monitor.get("cases", []) if item["id"] == case_id), None)
+    if case is None:
+        raise ValueError("Signal case not found")
+    if case["status"] == "RESOLVED":
+        raise ValueError("Resolved signal cases cannot be acknowledged")
+    if case["status"] == "OPEN":
+        case["status"] = "ACKNOWLEDGED"
+        case["acknowledged_tick"] = sim.tick
+        sim._state_changed()
+        from app.acamis.service import _audit
+        _audit(sim, "SIGNAL_REVIEW_ACKNOWLEDGED",
+               f"Operator acknowledged {case['domain']} deviation on {case['equipment_id']} for review; no simulated repair was executed.",
+               "HIGH")
+    return case

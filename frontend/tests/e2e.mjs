@@ -127,6 +127,10 @@ try {
   await new Promise(resolve => setTimeout(resolve, 500));
   await clickButton('Furnace stability');
   await page.waitForFunction(() => document.body.textContent?.includes('Furnace instability') && !document.querySelector('select')?.disabled);
+  await page.waitForFunction(() => document.body.textContent?.includes('Acknowledge for review'), { timeout: 15_000 });
+  await clickButton('Acknowledge for review');
+  await page.waitForFunction(() => document.body.textContent?.includes('SIGNAL_REVIEW_ACKNOWLEDGED'));
+  assert.equal(await page.evaluate(() => document.body.textContent?.includes('Inspect in simulation')), true);
   await page.select('select', 'AUTONOMOUS_SIMULATION');
   await page.waitForFunction(() => document.body.textContent?.includes('HUMAN_VERIFICATION_REQUIRED'));
   await page.waitForFunction(() => document.body.textContent?.includes('STABILIZED'));
